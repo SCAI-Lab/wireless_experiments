@@ -1,0 +1,408 @@
+# =============================================================================
+# Chamber session run plan — Rows 1-3 (connection interval, duty cycle, BLE-BLE contention)
+# Edit devices/conditions/durations here; run_session.py reads this directly.
+# =============================================================================
+
+session:
+  output_dir: "captures"          # where .btsnoop capture files get saved
+  results_csv: "results.csv"      # parsed summary, one row per run
+
+# BLE interface used for btmon (usually hci0 on a laptop's built-in adapter)
+btmon_controller: "hci0"
+
+# ---------------------------------------------------------------------------
+# Optional: Nordic nRF Sniffer for Bluetooth LE (physical dongle) for real
+# over-the-air advertising-channel metrics (CRC error rate, RSSI) that the
+# host's own HCI captures (btmon) can't see -- btmon only reports what OUR
+# OWN controller successfully received, not what was actually transmitted
+# over the air. Runs on a separate radio from btmon_controller above, so it
+# captures concurrently without interfering with btmon. Gracefully skipped
+# (with a warning, not an error) if disabled, the dongle isn't at
+# serial_port, or nrfutil-ble-sniffer isn't installed.
+#
+# Covers advertising channels (37/38/39) only. Following into the live data
+# connection (for retransmission/sequence-number stats, or connection-
+# channel CRC) isn't supported yet -- the sniffer failed to lock onto an
+# already-bonded device's reconnection (likely directed advertising) in
+# testing, and the fix wasn't pursued further since advertising-channel
+# metrics were the priority.
+#
+# IMPORTANT: once a device is connected it typically stops advertising (or
+# advertises rarely), so these numbers can go sparse or empty for most of a
+# run -- treat them as an advertising-channel spot-check, never as a general
+# link-quality metric for the active connection.
+#
+# A real per-second airtime/channel-utilization measurement (e.g. a second
+# radio in monitor mode) is NOT implemented -- out of scope for this
+# iteration, infrastructure-heavy. See row2_duty_cycle below for the
+# best-effort QBSS poll used as a partial substitute.
+# ---------------------------------------------------------------------------
+ble_sniffer:
+  enabled: true
+  serial_port: "/dev/ttyACM0"
+
+# ---------------------------------------------------------------------------
+# rosbag recording (all topics), ONE BAG PER RUN -- btmon/AFH captures only
+# ever recorded the BLE/HCI layer, never the actual published sensor data
+# (healthcare_msgs topics etc), which was otherwise ephemeral and never
+# persisted during a real chamber run. Added 2026-09-25. Per-run, not one
+# rolling session-spanning recording: each run is already duration-bounded
+# by its own row config (300s/1800s/etc), so there's no giant-file problem
+# to solve, and this keeps rosbag data lined up 1:1 with each run's own
+# .btsnoop/afh.csv/manifest row instead of needing to slice a multi-hour
+# session-wide bag back apart later. Written to
+# <session_dir>/<row>_<device>_<condition>_rep<N>_rosbag/ (a bag directory:
+# metadata.yaml + a storage file), started/stopped inside _attempt_run,
+# same lifecycle as btmon. Best-effort: gracefully skipped (warning, not
+# error) if `ros2` isn't on PATH or the recorder fails to start, since this
+# is a supplement to the BLE/HCI captures the run already relies on, not
+# something that should abort a real chamber run.
+rosbag:
+  enabled: true
+
+devices:
+  - name: Polar_H10
+    mac_address: "A0:9E:1A:DF:7F:6C"
+    launch_cmd: "ros2 run polar_ros2 polar_connector --mac-address-or-name A0:9E:1A:DF:7F:6C"
+  - name: Corsano
+    mac_address: "F1:3B:40:28:CB:EC"
+    # Command used to launch this device's ros4hc driver.
+    # Adjust to your actual ros2 launch invocation.
+    launch_cmd: "ros2 run corsano_ros corsano_ros --mac-address-or-name F1:3B:40:28:CB:EC --publish-bioz --publish-accel --publish-hr --publish-stress"
+
+  # - name: VivaLink
+  #   mac_address: "AA:BB:CC:DD:EE:03"
+  #   launch_cmd: "ros2 launch ros4hc_drv vivalink.launch.py mac_address:=AA:BB:CC:DD:EE:03"
+  #
+  # mac_address is used to explicitly disconnect a device from BlueZ after
+  # its tests finish (see disconnect_ble_device in session_lib.py) -- killing
+  # the driver process alone isn't enough: BlueZ still treats a bonded,
+  # trusted device as eligible for background auto-reconnect, and will
+  # silently reconnect to it the moment it's back in range/advertising,
+  # contending with whatever device is tested next on the same shared radio.
+  # Confirmed via real captures: a "finished" device reconnected in the
+  # background and stayed connected through an entire subsequent test,
+  # causing the other device to drop roughly every 45s.
+
+# ---------------------------------------------------------------------------
+# Row 1: connection interval calibration — two sub-runs per device:
+#   1. calibration: short, just records the negotiated interval/latency/
+#      supervision timeout.
+#   2. renegotiation_watch: long, watches for a mid-session renegotiation.
+# Checked against existing captures (2026-09-22): no confirmed mid-session
+# renegotiation has actually been observed yet -- the one interval-update
+# event found across all prior Row 1 captures landed at ~12s, inside the
+# normal driver startup sequence, not a later renegotiation. So
+# renegotiation_watch_duration_s below is a conservative placeholder to
+# catch one IF it happens, not a value derived from an observed occurrence
+# -- revisit once real data exists.
+# ---------------------------------------------------------------------------
+row1_connection_interval:
+  enabled: true
+  calibration_duration_s: 90
+  renegotiation_watch_duration_s: 600
+  replicates: 1
+
+# ---------------------------------------------------------------------------
+# Row 2: duty cycle validation — 0/25/50/75/100% of measured max throughput
+# (iperf3 at tuned bitrates). 100% was added so there's a condition near
+# real saturation, not just partial levels -- per external review, 0/25/75
+# had no point near the knee of the response curve.
+# ---------------------------------------------------------------------------
+row2_duty_cycle:
+  enabled: true
+  duration_s: 300
+  replicates: 3
+  duty_levels: [0, 25, 50, 75, 100]
+  # Within-device condition order is randomized each session (seeded from
+  # session_id, logged for reproducibility) to avoid confounding duty level
+  # with time/thermal/battery drift -- device order (Corsano fully before
+  # Polar) stays fixed; see the comment in chamber_session.py for why.
+  # An extra duty0pct_bracket replicate re-runs the 0% condition at the end
+  # of each device's block, as a drift check.
+  iperf:
+    pi_host: "192.168.1.103"      # SSH-reachable IP of the Raspberry Pi (confirmed via dry run)
+    pi_user: "scai"                # update if your Pi's SSH username differs
+    server_ip: "192.168.1.101"    # laptop's Ethernet IP, running `iperf3 -s` (confirmed via dry run)
+    # Each non-zero duty level's bitrate is that percentage of the link's measured max
+    # throughput -- a THROUGHPUT-based definition, not a true airtime-occupancy one. Real
+    # airtime is what actually determines BLE collisions, and doesn't map linearly onto
+    # throughput (MCS/aggregation/ACK overhead all change the ratio). poll_qbss_channel_
+    # utilization (session_lib.py) makes a best-effort attempt to cross-check against the
+    # AP's own advertised channel utilization (QBSS Load IE) as a partial real-airtime
+    # signal -- it's hardware/AP-dependent and may return no data every time; treat any
+    # value it does return as a spot-check, not a calibrated measurement.
+    # Scans (doesn't need to associate/join the network) from qbss_iface for
+    # qbss_bssid's QBSS Load IE, sampled periodically WHILE traffic is
+    # flowing (see start_qbss_poller in session_lib.py). Leave either unset
+    # to skip this entirely.
+    #
+    # qbss_iface MUST be a radio that's physically separate from
+    # btmon_controller's chip. Confirmed by direct testing (2026-09-22):
+    # this laptop's own WiFi (wlp0s20f3, iwlwifi driver, Intel Meteor Lake
+    # PCH CNVi WiFi) and its Bluetooth (hci0, Intel AX211) are the SAME
+    # physical combo module sharing one antenna, despite enumerating on
+    # different buses (PCIe vs USB) -- scanning from wlp0s20f3 mid-run would
+    # force WiFi/BT antenna time-sharing and perturb the very BLE link being
+    # measured. session_lib.py's _qbss_iface_is_safe() refuses to poll from
+    # any iwlwifi-driven interface for this reason, so leaving qbss_iface as
+    # this laptop's built-in WiFi silently produces no QBSS data (safely,
+    # not corrupting other metrics) rather than erroring.
+    #
+    # A genuinely separate USB WiFi adapter (TP-Link AC1300, RTL8822BU
+    # chipset, driver rtw_8822bu) is now plugged in as wlxc03a55a6e1bf --
+    # confirmed on its own physical radio (phy#1, separate from hci0's
+    # Intel AX211 combo module), passes _qbss_iface_is_safe(), and
+    # confirmed live (2026-09-23) to actually see the WirelessTests AP's
+    # real QBSS Load IE ("channel utilisation: 3/255" at idle). Needed two
+    # one-time host setup steps, done: `sudo ip link set wlxc03a55a6e1bf
+    # up` and `sudo setcap cap_net_admin+eip $(which iw)` (iw scan needs
+    # CAP_NET_ADMIN, same pattern as hcitool's capability grant).
+    #
+    # Getting this working also surfaced two real bugs in
+    # poll_qbss_channel_utilization (session_lib.py), both fixed: (1) this
+    # iw version (6.7) has no "bssid" scan filter at all -- the original
+    # `iw dev <iface> scan bssid <bssid>` always failed with a usage error,
+    # so this had never actually returned real data before; (2) a broad
+    # scan returns every visible AP's own BSS Load block, so the fix
+    # isolates the target bssid's own section before searching for
+    # "channel utilisation" rather than matching whichever AP's line comes
+    # first in the scan output.
+    #
+    # Individual polls are flaky by nature of WiFi scanning (confirmed:
+    # 2 of 3 rapid back-to-back test calls returned None, 1 succeeded) --
+    # already handled by start_qbss_poller/stop_qbss_poller's design
+    # (averages over however many samples succeed during a run; a run's
+    # much longer poll_interval_s spacing, vs. this test's rapid retries,
+    # should make failures rarer in practice).
+    qbss_iface: wlxc03a55a6e1bf
+    qbss_bssid: "78:8C:B5:97:26:72"   # the WirelessTests AP, confirmed 2026-09-22
+    #
+    # Traffic is UDP with a fixed payload (udp_payload_bytes) rather than TCP, so the
+    # offered load doesn't back off/adapt under loss the way TCP does -- packet loss and
+    # jitter as reported by iperf3 itself are recorded (packet_loss_pct, iperf_jitter_ms
+    # in results.csv) as their own KPI, separate from BLE's own metrics.
+    udp_payload_bytes: 1200
+    # To skip the live max-throughput measurement and pin explicit bitrates instead,
+    # uncomment bitrate_by_duty below (must cover every non-zero value in duty_levels):
+    # bitrate_by_duty:
+    #   25: "13.6M"
+    #   50: "27.3M"
+    #   75: "41M"
+    #   100: "54.5M"
+    #
+    # Re-validated against a real UDP measurement (session 20260923_004345,
+    # 2026-09-23): duty100pct's induced_load_mbps landed at 60.31-60.66
+    # across 6 reps (both devices), consistent enough to trust as the new
+    # baseline. Supersedes the original 54.5 Mbit/s, which was TCP-measured
+    # (TCP's ceiling differs from UDP's: different congestion control,
+    # aggregation, ACK overhead) -- not the same thing this field is now
+    # compared against, since measure_max_throughput (session_lib.py) uses
+    # UDP to match the traffic mode duty-cycle load actually uses. This
+    # chamber is anechoic, so the max should stay stable session to session
+    # -- each live measurement is checked against this baseline, and the
+    # run aborts if it's off by more than the tolerance below (usually
+    # means AP channel/config, chamber seal, or cabling issue).
+    expected_max_mbps: 60.6
+    max_mbps_tolerance_pct: 10  # tightened from 20 -- validate against real session-to-session variance
+    settle_delay_s: 30            # let BLE connection stabilize before traffic starts;
+    # must stay > STARTUP_GRACE_S (checked at session start) or drops caused by traffic
+    # starting would be silently hidden inside the startup grace window.
+
+# ---------------------------------------------------------------------------
+# Row 3: forced-channel "mechanism" test — added 2026-09-23 after Row 2's
+# duty100pct showed AFH settling to a stable, narrowed channel map (e.g. 15
+# enabled channels for Corsano, 19 for Polar) with zero unexpected
+# disconnects at every duty level. That's consistent with "AFH is routing
+# around the WiFi interference," but Row 2 alone can't PROVE it -- there's
+# no condition where AFH has nowhere to go. This row forces exactly that:
+# HCI_LE_Set_Host_Channel_Classification restricts AFH to BLE data channels
+# 12-19 (FORCED_CHANNEL_RANGE in session_lib.py) -- the range WiFi channel 6
+# occupies, matching the channel range used in the published ANSI C63.27
+# BLE5 coexistence study this design was modeled on (doi:10.1109/
+# MEMC.2020.9328232), for direct comparability with that methodology.
+#
+# Comparing forced_channel_max_load here against Row 2's duty100pct (same
+# induced load, AFH free) is what actually quantifies AFH's protection --
+# a cleaner, more publishable claim than degradation-vs-load alone.
+# forced_channel_no_load isolates whether the specific 8-channel range
+# itself is fine on its own (no WiFi), so a difference in max_load isn't
+# confounded with "channels 12-19 happen to be bad for some other reason."
+#
+# Always restores the normal, unrestricted channel map before the next run
+# (see reset_host_channel_classification in session_lib.py) -- a forced
+# map leaking into an unrelated test would silently invalidate it.
+#
+# Dose-response levels (duty25/50/75pct) added 2026-09-23: the only real
+# data on disk before this was the two endpoints (0%/100%, session
+# 20260923_112431) -- not enough for the manuscript's held-out validation
+# (fit on a subset, predict the rest). These three intermediate conditions
+# are what gym_sim/validate_held_out.py needs to actually compare
+# predicted vs. measured at 50/75% once this row is re-run. Named
+# forced_channel_duty<NN>pct (parsed by _forced_channel_duty_pct in
+# chamber_session.py) to match Row 2's dutyNNpct convention.
+# ---------------------------------------------------------------------------
+row3_forced_channel:
+  enabled: true
+  duration_s: 300
+  replicates: 3
+  conditions: [
+    "forced_channel_no_load",
+    "forced_channel_duty25pct",
+    "forced_channel_duty50pct",
+    "forced_channel_duty75pct",
+    "forced_channel_max_load",
+  ]
+
+# ---------------------------------------------------------------------------
+# Row 4: endurance runs — one long baseline and one long max-load run per
+# device, sized for a real disconnect-rate bound (rule of three). 1800s
+# minus the startup/shutdown grace windows and settle delay leaves ~29min
+# actually analyzed -- zero drops over that bounds the rate at <=3/29min
+# ~= 6/hour, vs. the ~26/hour bound Row 2's ~7min-per-condition exposure
+# gives. Bumping to 60min (if chamber time allows) would tighten this to
+# ~3/hour.
+# ---------------------------------------------------------------------------
+row4_endurance:
+  enabled: true
+  duration_s: 1800   # 30 min; reviewer suggested 30-60min, start at the low end
+  replicates: 1
+  conditions: ["duty0pct_long", "duty100pct_long"]  # reuses row2's iperf/bitrate machinery
+
+
+# ---------------------------------------------------------------------------
+# Row 5: BLE-BLE contention — the generic peripheral dongles connect to THIS
+# LAPTOP (same central as the device under test, confirmed 2026-09-22), so
+# this measures the central's own connection-event scheduling under
+# contention, not independent RF contention on the shared 2.4GHz band. A
+# future variant with peripherals on an independent central would be needed
+# to isolate pure RF contention from central-scheduling effects -- don't
+# conflate the two when writing this up.
+# ---------------------------------------------------------------------------
+row5_contention:
+  enabled: true
+  duration_s: 300
+  replicates: 3
+  # Which device(s) to use as the "real sensor under test" for this block
+  primary_devices: ["Corsano", "Polar_H10"]
+  contention_type: "shared_central"
+  # Only 1 generic BLE peripheral dongle available as of 2026-09-23, so
+  # mid == max here -- this is NOT a graded dose-response (there's no step
+  # between conditions), just a "contention present vs. absent" comparison.
+  # State this explicitly as a hardware-driven limitation in the write-up,
+  # not a deliberate design choice. Bump max (and get a real dose-response)
+  # once more dongles are set up.
+  num_peripherals:
+    mid: 1
+    max: 1
+  peripheral_connection_interval_ms: null
+  peripheral_traffic_description: ""
+  conditions: ["contention_0", "contention_mid", "contention_max"]
+  # Note: generic BLE peripheral dongles are powered on/connected manually
+  # before the "contention_mid"/"contention_max" runs — this script does
+  # not control them, but does log the operator-setup pause's start/end
+  # timestamps so it's visible in session.log.
+  #
+  # A "contention_0_bracket" condition is automatically appended at the end
+  # of this list by run_test3_contention (chamber_session.py) -- not listed
+  # here since it's not config-driven, just a heads up that it'll appear in
+  # results.csv. It re-runs the 0-peripheral condition after prompting the
+  # operator to power everything back OFF, as a drift check across the
+  # escalation -- conditions here can't be randomized like Row 2's (the
+  # peripherals are physically added, with no supported way to un-power a
+  # subset mid-session), so this bracket is the cheaper substitute.
+
+# ---------------------------------------------------------------------------
+# Row 6 (chamber_session.py's own numbering -- distinct from gym_session.py's
+# SEPARATE "Row 6" passive-gym visit below, a different script for a
+# different occasion; the two just happen to share the number): headroom
+# sweep. Row 3's forced-channel test only has two headroom levels (full,
+# via AFH-free Row 2, and zero, via the fixed 8-channel FORCED_CHANNEL_RANGE)
+# -- this fills in the middle, varying how many CLEAN channels AFH has to
+# escape to, not just the WiFi load at one fixed (zero-headroom) level.
+# Answers a different question than Row 3: how many clean channels does the
+# controller actually need before it escapes on its own -- a cliff between
+# k=0 and k=2 would be a strong, simple guidance result ("two clean channels
+# suffice"); a graded response across k means the controller doesn't cleanly
+# hop away from busy channels until a fixed classification leaves it little
+# choice. The logged AFH channel map (already captured every run, see
+# start_afh_poller) is the key output here, showing what the controller
+# ACTUALLY hopped on at each k, not just the connectivity outcome.
+#
+# Masks: FORCED_CHANNEL_RANGE (12-19, the WiFi ch6 overlap, session_lib.py)
+# plus k channels drawn from the band the controller already kept clear
+# under load in the AFH-free runs (data channels 0-5 and 27-36), spread out
+# to avoid sitting next to ambient networks -- checked against an ambient
+# scan before picking these specific channels, 2026-09-24.
+channel_masks:
+  0: [12, 13, 14, 15, 16, 17, 18, 19]
+  2: [12, 13, 14, 15, 16, 17, 18, 19, 2, 32]
+  4: [12, 13, 14, 15, 16, 17, 18, 19, 0, 4, 30, 34]
+  8: [12, 13, 14, 15, 16, 17, 18, 19, 0, 2, 4, 28, 30, 32, 34, 36]
+
+row6_headroom_sweep:
+  enabled: true
+  duration_s: 300   # same as Row 3 -- HCI parsing, completeness/delay metrics are identical
+  replicates: 3
+  # Each k in channel_masks (above) run once at this WiFi load -- 75%, not
+  # 100%: for the Polar in particular this is where backlog/loss are clearly
+  # visible without the link dying outright, so adding clean channels back
+  # has a visible effect to measure instead of just "still collapsed."
+  load_duty_pct: 75
+  # One additional no-load control, at this single k, to confirm a small
+  # mask on its own doesn't destabilize anything by itself (isolates the
+  # mask's effect from the load's effect).
+  no_load_control_k: 2
+  # Channel-forcing already happens before do_run's existing
+  # settle_delay_s (row2_duty_cycle.iperf.settle_delay_s, 30s) elapses and
+  # load starts -- see _attempt_run in session_lib.py: forced_channels is
+  # applied immediately after connecting, and the iperf settle delay is a
+  # separate, later step. No new timing config needed here; this reuses
+  # that existing 30s gap for the mask to settle (a few connection events)
+  # before load begins.
+
+# ---------------------------------------------------------------------------
+# Row 6 (gym_session.py's own numbering -- see the note above): passive
+# real-gym observation — NOT a controlled experiment.
+# No AP, no iperf3, no generic peripherals. Just one sensor + btmon,
+# listening to whatever ambient RF/BLE conditions the real gym has that day.
+# Purpose: ground-truth check for the simulation's duty-cycle range and
+# fading/multipath assumptions — see Row 9 (sensitivity sweep) for why
+# this specific check was prioritized over others.
+# ---------------------------------------------------------------------------
+row6_passive_gym:
+  enabled: true
+  duration_s: 3600         # ~1 hour; extend if the gym session allows more time
+  replicates: 1
+  # Devices to run sequentially during the visit (not simultaneously —
+  # this is observational, not a contention test).
+  device_names: ["Corsano", "Polar_H10"]
+  # Per-channel (1-13) WiFi occupancy for the whole gym visit, via the same
+  # separate USB WiFi adapter used for row2_duty_cycle.iperf.qbss_iface
+  # (confirmed 2026-09-23: wlxc03a55a6e1bf, TP-Link AC1300/RTL8822BU, its
+  # own physical radio, passes the combo-chip safety check). Written to
+  # <session_dir>/channel_occupancy.csv (timestamp_s, channel, ap_count,
+  # mean_channel_utilization_pct per channel per poll) -- this is what
+  # answers "occupied WiFi channels" / "mean busy fraction per channel" in
+  # Table tab:gym-observation, not just one AP's own load. Set to null to
+  # skip (e.g. if the adapter isn't available for this particular visit).
+  channel_occupancy_iface: wlxc03a55a6e1bf
+  channel_occupancy_poll_interval_s: 60
+  # Nearby BLE device count, as a rough background-BLE-density proxy.
+  # PRIVACY (GDPR / Swiss FADP): only ever logs an aggregate integer count
+  # per poll -- never individual MAC addresses (see session_lib.py's
+  # count_nearby_ble_devices and this file's top-of-script note). Opt-in
+  # (enabled: false by default), unlike the WiFi poller above, because this
+  # one scans on hci0 -- the SAME radio the sensor under test is connected
+  # through -- so it briefly competes for airtime with the actual
+  # measurement. Kept short (scan_duration_s) and infrequent
+  # (poll_interval_s) to limit that. Before enabling this for a real visit:
+  # get the facility's permission and let staff know you're there.
+  ble_density_scan:
+    enabled: false
+    scan_duration_s: 5
+    poll_interval_s: 90
+  # Optional: if you have a way to poll RSSI periodically (e.g. a background
+  # `hcitool rssi` loop) note it here as a reminder; not automated by this
+  # script, since btmon alone doesn't guarantee RSSI in every HCI capture.
+  notes: "Bring one sensor + laptop only. Log ambient conditions (time of day, approx. occupancy, visible WiFi networks if known) manually alongside the capture."
