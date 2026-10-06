@@ -57,6 +57,7 @@ import sys
 import time
 
 from session_lib import (
+    stop_all_drivers,
     DeviceCheckError,
     InfrastructureCheckError,
     RunAbortedError,
@@ -113,7 +114,7 @@ def run_passive_gym(cfg, session_dir, session_id, completed=frozenset()):
     # Nearby BLE device density -- also whole-session, not per-device-run.
     # Shares hci0 with the sensor connection (unlike the WiFi poller above),
     # so short/infrequent by default to limit perturbation -- see the
-    # PRIVACY note at the top of this file and in session_lib.py's
+    # PRIVACY note at the top of this file and in session_lib/ble_radio.py's
     # count_nearby_ble_devices docstring before changing what gets logged.
     # Disabled unless ble_density_scan is explicitly enabled in config.yaml
     # (opt-in, not opt-out -- this is the one poller here that touches the
@@ -257,6 +258,7 @@ def main():
         do_parse(cfg, session_dir, session_ts)
         sys.exit(1)
     finally:
+        stop_all_drivers()  # drivers don't receive the terminal's Ctrl+C
         stop_pairing_agent(pairing_agent)
 
 

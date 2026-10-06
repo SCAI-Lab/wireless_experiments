@@ -16,8 +16,6 @@ Automates the repetitive parts of the chamber procedure:
 
 What this script does NOT automate (still manual, by design):
   - physically connecting/charging devices
-  - powering on the generic BLE peripheral dongles for Row 3's contention
-    condition (do this before running that block)
   - verifying the TP-Link/Pi are on the right 2.4 GHz channel (do this in
     your pre-day dry run, per the checklist)
 
@@ -25,7 +23,7 @@ Devices run one at a time, fully (all of rows 1-3 for device A, then all of
 rows 1-3 for device B), rather than interleaved row-by-row. This matches how
 a single patient's sensor is actually used in the field (one device active
 at a time) and, together with the explicit BlueZ disconnect after every run
-(see disconnect_ble_device in session_lib.py), avoids a confirmed bug: a
+(see disconnect_ble_device in session_lib/drivers.py), avoids a confirmed bug: a
 "finished" device's BLE connection can silently persist in the background
 (BlueZ auto-reconnects bonded devices) and contend with whatever device is
 tested next on the single shared radio -- this was traced to real ~45s
@@ -73,16 +71,25 @@ import sys
 import time
 
 from session_lib import (
+    stop_all_drivers,
+    disconnect_ble_device,
+    _kernel_has_link as _link_is_up,
     FORCED_CHANNEL_RANGE,
     STARTUP_GRACE_S,
     DeviceCheckError,
     InfrastructureCheckError,
     RunAbortedError,
     StrayProcessError,
+    check_ble_sniffer_ready,
     check_bt_controller_ready,
     check_devices_ready,
+    check_devices_unbonded,
     kill_stray_driver_processes,
+    check_ros_packages,
     check_pi_reachable,
+    check_pi_wifi_link,
+    check_wifi_scan_ready,
+    disable_internal_wifi_for_session,
     do_parse,
     do_run,
     find_latest_session_ts,
@@ -91,12 +98,16 @@ from session_lib import (
     load_completed_keys,
     load_config,
     log,
+    log_wifi_rfkill_state,
     prepare_rerun_failed,
     reset_host_channel_classification,
     resolve_duty_bitrates,
+    restore_internal_wifi,
     run_key,
     setup_logging,
+    start_channel_occupancy_poller,
     start_pairing_agent,
+    stop_channel_occupancy_poller,
     stop_pairing_agent,
 )
 
@@ -264,9 +275,6 @@ def _row2_extra(r, bitrate_by_duty, duty):
         "parse_udp_stats_fn": parse_iperf_udp_stats,
         "target_mbps": bitrate_str_to_mbps(bitrate_by_duty[duty]),
     }
-    if r["iperf"].get("qbss_iface") and r["iperf"].get("qbss_bssid"):
-        extra["qbss_iface"] = r["iperf"]["qbss_iface"]
-        extra["qbss_bssid"] = r["iperf"]["qbss_bssid"]
     return extra
 
 
@@ -375,6 +383,15 @@ def _forced_channel_duty_pct(condition):
     return int(m.group(1))
 
 
+def _condition_selected(cfg, condition):
+    """--condition filter (rows 3, 5 and 8 only). Lets one condition be rerun
+    in a fresh session -- e.g. forced_channel_max_load reps 1-3 -- without
+    repeating the whole row, which --resume/--rerun-failed can't do for a
+    rep that was recorded as PASSED."""
+    selected = cfg.get("_condition_filter")
+    return not selected or condition in selected
+
+
 def run_test3_forced_channel(
     cfg, session_dir, session_id, device, completed=frozenset()
 ):
@@ -383,7 +400,7 @@ def run_test3_forced_channel(
     condition every other row uses. Comparing this against Row 2's
     duty100pct (same load, AFH free) is what actually quantifies how much
     AFH is protecting the link, rather than inferring it from the channel
-    map alone -- see FORCED_CHANNEL_RANGE in session_lib.py for exactly
+    map alone -- see FORCED_CHANNEL_RANGE in session_lib/ble_radio.py for exactly
     which channels and why."""
     r = cfg.get("row3_forced_channel")
     if not r or not r.get("enabled"):
@@ -403,35 +420,68 @@ def run_test3_forced_channel(
         f"{r['conditions']} -- compare against Row 2's duty100pct (AFH free, "
         f"same load) to quantify AFH's protection =="
     )
-    for condition in r["conditions"]:
-        duty = _forced_channel_duty_pct(condition)
+    def _extra(duty):
         extra = dict(_row2_extra(row2, bitrate_by_duty, duty) or {})
         extra["forced_channels"] = FORCED_CHANNEL_RANGE
-        pending = []
-        for rep in range(1, r["replicates"] + 1):
-            if run_key("row3", device["name"], condition, rep) in completed:
-                log.info(
-                    f"  -> skipping row3 | {device['name']} | {condition} | "
-                    f"rep{rep} (already recorded, resuming)"
-                )
-            else:
-                pending.append(rep)
-        for rep in pending:
-            do_run(
-                cfg,
-                session_dir,
-                "row3",
-                device["name"],
-                device["launch_cmd"],
-                condition,
-                rep,
-                r["duration_s"],
-                session_id,
-                mac_address=device.get("mac_address"),
-                total_replicates=r["replicates"],
-                extra=extra,
-                retry_on_fail=False,
+        return extra
+
+    # Shuffled (condition, rep) order, seeded per session/device -- same
+    # reasoning as Row 2/5: run in config order, load level was confounded
+    # with time/thermal/battery drift across the block (review 2026-10-06).
+    # Deterministic, so a --resume reproduces the same order.
+    conditions = [c for c in r["conditions"] if _condition_selected(cfg, c)]
+    rng = random.Random(f"{session_id}:{device['name']}:row3")
+    pairs = [
+        (condition, rep)
+        for condition in conditions
+        for rep in range(1, r["replicates"] + 1)
+    ]
+    rng.shuffle(pairs)
+    log.info(f"  -> shuffled (condition, rep) order: {pairs}")
+    for condition, rep in pairs:
+        if run_key("row3", device["name"], condition, rep) in completed:
+            log.info(
+                f"  -> skipping row3 | {device['name']} | {condition} | "
+                f"rep{rep} (already recorded, resuming)"
             )
+            continue
+        do_run(
+            cfg,
+            session_dir,
+            "row3",
+            device["name"],
+            device["launch_cmd"],
+            condition,
+            rep,
+            r["duration_s"],
+            session_id,
+            mac_address=device.get("mac_address"),
+            total_replicates=r["replicates"],
+            extra=_extra(_forced_channel_duty_pct(condition)),
+            retry_on_fail=False,
+        )
+    # Bracket, as in Row 2: one more no-load run at the end of the block, to
+    # check for drift across the shuffled sequence.
+    bracket_condition = "forced_channel_no_load_bracket"
+    if "forced_channel_no_load" in conditions and run_key(
+        "row3", device["name"], bracket_condition, 1
+    ) not in completed:
+        log.info(f"  -> bracket: re-running forced_channel_no_load as {bracket_condition}")
+        do_run(
+            cfg,
+            session_dir,
+            "row3",
+            device["name"],
+            device["launch_cmd"],
+            bracket_condition,
+            1,
+            r["duration_s"],
+            session_id,
+            mac_address=device.get("mac_address"),
+            total_replicates=1,
+            extra=_extra(0),
+            retry_on_fail=False,
+        )
     # Block-level safety net, in addition to _attempt_run's own per-run
     # reset: if the LAST run in this block crashed/was interrupted before
     # its own reset, the classification would otherwise stay forced on the
@@ -448,22 +498,26 @@ def run_test3_forced_channel(
     log.info(f"Row 3 [{device['name']}] complete")
 
 
-def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=frozenset()):
+def run_test5_headroom_sweep(
+    cfg, session_dir, session_id, device, completed=frozenset()
+):
     """Headroom sweep: unlike Row 3 (one fixed 8-channel mask, WiFi load
     varied), this varies how many CLEAN channels AFH has available to
-    escape to, at one fixed high load -- see config.yaml's row6_headroom_
+    escape to, at one fixed high load -- see config.yaml's row5_headroom_
     sweep/channel_masks comments for the full rationale. The logged AFH
     channel map (start_afh_poller, already captured for every run) is the
     key output: whether the controller actually hops onto the added clean
-    channels at each k, not just whether the link stays connected."""
-    r = cfg.get("row6_headroom_sweep")
+    channels at each k, not just whether the link stays connected.
+
+    Runs as part of --row all."""
+    r = cfg.get("row5_headroom_sweep")
     if not r or not r.get("enabled"):
-        log.info(f"Row 6 (headroom sweep) [{device['name']}]: disabled, skipping")
+        log.info(f"Row 5 (headroom sweep) [{device['name']}]: disabled, skipping")
         return
     channel_masks = cfg.get("channel_masks")
     if not channel_masks:
         raise ValueError(
-            "row6_headroom_sweep is enabled but top-level channel_masks is "
+            "row5_headroom_sweep is enabled but top-level channel_masks is "
             "missing from config.yaml -- needed to know which channels each "
             "k value forces"
         )
@@ -472,13 +526,13 @@ def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=fro
     if not bitrate_by_duty:
         raise ValueError(
             "row2_duty_cycle.iperf.bitrate_by_duty was never resolved -- "
-            "needed by row6_headroom_sweep's load conditions"
+            "needed by row5_headroom_sweep's load conditions"
         )
     load_pct = r["load_duty_pct"]
     no_load_k = r["no_load_control_k"]
     if no_load_k not in channel_masks:
         raise ValueError(
-            f"row6_headroom_sweep.no_load_control_k ({no_load_k}) isn't a key "
+            f"row5_headroom_sweep.no_load_control_k ({no_load_k}) isn't a key "
             f"in channel_masks ({sorted(channel_masks)})"
         )
 
@@ -487,9 +541,10 @@ def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=fro
     for k in sorted(channel_masks):
         conditions[f"headroom_k{k}_duty{load_pct}pct"] = (channel_masks[k], load_pct)
     conditions[f"headroom_k{no_load_k}_no_load"] = (channel_masks[no_load_k], 0)
+    conditions = {c: v for c, v in conditions.items() if _condition_selected(cfg, c)}
 
     log.info(
-        f"=== Row 6 [{device['name']}]: headroom sweep -- k in "
+        f"=== Row 5 [{device['name']}]: headroom sweep -- k in "
         f"{sorted(channel_masks)} clean channels at {load_pct}% load, plus a "
         f"no-load control at k={no_load_k}, {r['duration_s']}s x "
         f"{r['replicates']} reps == "
@@ -497,7 +552,7 @@ def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=fro
 
     # Shuffle (condition, rep) order per device, same reasoning as Row 2:
     # avoid confounding channel count with time/thermal/battery drift.
-    rng = random.Random(f"{session_id}:{device['name']}:row6")
+    rng = random.Random(f"{session_id}:{device['name']}:row5")
     pairs = [
         (condition, rep)
         for condition in conditions
@@ -507,9 +562,9 @@ def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=fro
     log.info(f"  -> shuffled (condition, rep) order: {pairs}")
 
     for condition, rep in pairs:
-        if run_key("row6", device["name"], condition, rep) in completed:
+        if run_key("row5", device["name"], condition, rep) in completed:
             log.info(
-                f"  -> skipping row6 | {device['name']} | {condition} | "
+                f"  -> skipping row5 | {device['name']} | {condition} | "
                 f"rep{rep} (already recorded, resuming)"
             )
             continue
@@ -519,7 +574,7 @@ def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=fro
         do_run(
             cfg,
             session_dir,
-            "row6",
+            "row5",
             device["name"],
             device["launch_cmd"],
             condition,
@@ -535,11 +590,11 @@ def run_test6_headroom_sweep(cfg, session_dir, session_id, device, completed=fro
     if not reset_host_channel_classification():
         log.warning(
             "  -> could not confirm the channel classification was reset "
-            "at the end of Row 6 -- the next AFH-free run's own proactive "
+            "at the end of Row 5 -- the next AFH-free run's own proactive "
             "reset should still catch this, but check the AFH CSV of "
             "whatever runs next if unsure"
         )
-    log.info(f"Row 6 [{device['name']}] complete")
+    log.info(f"Row 5 [{device['name']}] complete")
 
 
 def run_test4_endurance(cfg, session_dir, session_id, device, completed=frozenset()):
@@ -585,45 +640,64 @@ def run_test4_endurance(cfg, session_dir, session_id, device, completed=frozense
     log.info(f"Row 4 [{device['name']}] complete")
 
 
-def _run_row5_condition(
-    cfg,
-    session_dir,
-    session_id,
-    device,
-    r,
-    condition,
-    replicates,
-    completed,
-    prompt_text=None,
+def run_test8_headroom_saturation(
+    cfg, session_dir, session_id, device, completed=frozenset()
 ):
-    pending = []
-    for rep in range(1, replicates + 1):
-        if run_key("row5", device["name"], condition, rep) in completed:
+    """Opt-in (--row 8, not in --row all), added 2026-10-06: Row 5's
+    headroom sweep repeated at 100% load for a few k values, to test whether
+    Row 5's 75% result holds at the top of the load range -- e.g. whether
+    the Polar's "fully recovered from k=2" cliff stays at k=2. Same masks
+    (channel_masks) and same 100% bitrate as Row 2's duty100pct. Labelled
+    row8 because row6/row7 already name other runs in existing data
+    (chamber contention, the gym visit, the scan-interference test)."""
+    r = cfg.get("row8_headroom_saturation")
+    if not r or not r.get("enabled"):
+        log.info(f"Row 8 (headroom at 100%) [{device['name']}]: disabled, skipping")
+        return
+    channel_masks = cfg.get("channel_masks") or {}
+    missing = [k for k in r["k_values"] if k not in channel_masks]
+    if missing:
+        raise ValueError(
+            f"row8_headroom_saturation.k_values {missing} aren't keys in "
+            f"channel_masks ({sorted(channel_masks)})"
+        )
+    row2 = cfg["row2_duty_cycle"]
+    bitrate_by_duty = row2["iperf"].get("bitrate_by_duty")
+    load_pct = r["load_duty_pct"]
+    if not bitrate_by_duty or load_pct not in bitrate_by_duty:
+        raise ValueError(
+            f"row2_duty_cycle.iperf.bitrate_by_duty has no {load_pct}% level -- "
+            f"needed by row8_headroom_saturation"
+        )
+    conditions = {
+        f"headroom_k{k}_duty{load_pct}pct": channel_masks[k] for k in r["k_values"]
+    }
+    conditions = {c: v for c, v in conditions.items() if _condition_selected(cfg, c)}
+    log.info(
+        f"=== Row 8 [{device['name']}]: headroom at {load_pct}% load -- k in "
+        f"{r['k_values']}, {r['duration_s']}s x {r['replicates']} reps =="
+    )
+    rng = random.Random(f"{session_id}:{device['name']}:row8")
+    pairs = [
+        (condition, rep)
+        for condition in conditions
+        for rep in range(1, r["replicates"] + 1)
+    ]
+    rng.shuffle(pairs)
+    log.info(f"  -> shuffled (condition, rep) order: {pairs}")
+    for condition, rep in pairs:
+        if run_key("row8", device["name"], condition, rep) in completed:
             log.info(
-                f"  -> skipping row5 | {device['name']} | {condition} | "
+                f"  -> skipping row8 | {device['name']} | {condition} | "
                 f"rep{rep} (already recorded, resuming)"
             )
-        else:
-            pending.append(rep)
-    if not pending:
-        log.info(
-            f"  -> skipping condition {condition} entirely "
-            f"(all replicates already recorded, resuming)"
-        )
-        return
-    if prompt_text:
-        pause_start = time.strftime("%Y-%m-%d %H:%M:%S")
-        log.info(f"  -> operator setup pause starting at {pause_start}")
-        input(prompt_text)
-        pause_end = time.strftime("%Y-%m-%d %H:%M:%S")
-        log.info(
-            f"  -> operator confirmed peripherals are set up at {pause_end}, continuing"
-        )
-    for rep in pending:
+            continue
+        extra = dict(_row2_extra(row2, bitrate_by_duty, load_pct) or {})
+        extra["forced_channels"] = conditions[condition]
         do_run(
             cfg,
             session_dir,
-            "row5",
+            "row8",
             device["name"],
             device["launch_cmd"],
             condition,
@@ -631,79 +705,18 @@ def _run_row5_condition(
             r["duration_s"],
             session_id,
             mac_address=device.get("mac_address"),
-            total_replicates=replicates,
-            retry_on_fail=False,  # interference-induced instability IS the data
+            total_replicates=r["replicates"],
+            extra=extra,
+            retry_on_fail=False,
         )
-
-
-def run_test5_contention(cfg, session_dir, session_id, device, completed=frozenset()):
-    r = cfg["row5_contention"]
-    if not r.get("enabled"):
-        log.info(f"Row 5 (contention) [{device['name']}]: disabled, skipping")
-        return
-    if device["name"] not in r["primary_devices"]:
-        log.info(
-            f"Row 5 (contention): {device['name']} not in primary_devices, skipping"
+    if not reset_host_channel_classification():
+        log.warning(
+            "  -> could not confirm the channel classification was reset "
+            "at the end of Row 8 -- the next AFH-free run's own proactive "
+            "reset should still catch this, but check the AFH CSV of "
+            "whatever runs next if unsure"
         )
-        return
-    log.info(
-        f"=== Row 5/5 [{device['name']}]: BLE-BLE contention ({r['contention_type']}) -- "
-        f"conditions {r['conditions']} ==="
-    )
-    # Conditions are NOT randomized here, unlike Row 2: the peripherals are
-    # physically added by the operator and there's no supported way to
-    # un-power a subset of them mid-session, so contention_0 -> mid -> max
-    # is a hardware-constrained monotonic escalation, not an arbitrary
-    # ordering choice. A contention_0_bracket at the end (below) is a
-    # cheaper drift check than full randomization -- switching everything
-    # OFF is easy, unlike reordering the escalation itself.
-    num_peripherals = r.get("num_peripherals") or {}
-    prompts = {
-        "contention_mid": num_peripherals.get("mid"),
-        "contention_max": num_peripherals.get("max"),
-    }
-    for condition in r["conditions"]:
-        prompt_text = None
-        if condition in prompts:
-            count = prompts[condition]
-            count_str = (
-                f"{count} peripheral(s)"
-                if count is not None
-                else "the configured peripheral count (UNSET -- check config.yaml)"
-            )
-            prompt_text = (
-                f"\n>>> Set up {count_str} for condition '{condition}' now "
-                f"(testing {device['name']}), then press Enter to continue..."
-            )
-        _run_row5_condition(
-            cfg,
-            session_dir,
-            session_id,
-            device,
-            r,
-            condition,
-            r["replicates"],
-            completed,
-            prompt_text,
-        )
-
-    # Bracket: power everything back OFF and re-run the 0-peripheral
-    # condition once more, to check for drift across the whole escalation.
-    _run_row5_condition(
-        cfg,
-        session_dir,
-        session_id,
-        device,
-        r,
-        "contention_0_bracket",
-        1,
-        completed,
-        prompt_text=(
-            f"\n>>> Power OFF / disconnect all generic BLE peripheral dongles "
-            f"now (testing {device['name']}), then press Enter to continue..."
-        ),
-    )
-    log.info(f"Row 5/5 [{device['name']}] complete")
+    log.info(f"Row 8 [{device['name']}] complete")
 
 
 # =============================================================================
@@ -719,10 +732,11 @@ def main():
     run_p.add_argument(
         "--row",
         default="all",
-        choices=["1", "2", "3", "4", "5", "6", "all"],
-        help="Which row to run, or 'all' for rows 1, 2, 3, 4 in that order "
-        "(rows 5 and 6 are opt-in extras, same as row 5 always was -- run "
-        "them explicitly with --row 5 / --row 6).",
+        choices=["1", "2", "3", "4", "5", "8", "all"],
+        help="Which row to run, or 'all' for rows 1, 2, 3, 4, 5 in that order. "
+        "Row 8 (headroom at 100%% load) is opt-in: run it with --row 8. "
+        "(Rows 6, BLE-BLE contention, and 7, QBSS scan interference, were "
+        "removed 2026-10-06; their past data still parses.)",
     )
     run_p.add_argument("--config", default="config.yaml")
     run_p.add_argument(
@@ -736,6 +750,15 @@ def main():
         "cleanup are also scoped to just this device.",
     )
     run_p.add_argument(
+        "--condition",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="Rows 3, 5 and 8 only: run just this condition (repeatable), e.g. "
+        "--row 3 --condition forced_channel_max_load, or --row 5 --condition "
+        "headroom_k0_duty75pct. Other rows ignore it.",
+    )
+    run_p.add_argument(
         "--resume",
         nargs="?",
         const="latest",
@@ -744,7 +767,7 @@ def main():
         help="Resume an interrupted run instead of starting a new session: "
         "re-uses that session's directory and skips any (row, device, "
         "condition, replicate) combo already recorded in its manifest.csv "
-        "-- PASSED always, FAILED too for no-retry rows (2/3/4/5/6), where "
+        "-- PASSED always, FAILED too for no-retry rows (2/3/4/5), where "
         "a FAILED result is itself the recorded outcome, not an error to "
         "retry (see --rerun-failed to override that). Give a session "
         "timestamp to resume a specific one, or omit the value to resume "
@@ -757,7 +780,7 @@ def main():
         "condition, replicate) already recorded as FAILED, not just "
         "what's missing entirely. The original failed capture (and its "
         "pcap/afh.csv/rosbag) is renamed out of the way first, never "
-        "overwritten. For no-retry rows (2/3/4/5/6), a FAILED result is "
+        "overwritten. For no-retry rows (2/3/4/5), a FAILED result is "
         "often ITSELF the intended data point (interference causing a "
         "real disconnect) -- make sure that's not what you're about to "
         "discard before using this on those rows.",
@@ -821,6 +844,8 @@ def main():
     )
 
     pairing_agent = None
+    rfkill_id = None
+    occupancy_poller = None
     try:
         if args.command == "run":
             if args.device:
@@ -833,20 +858,38 @@ def main():
                     )
                 cfg["devices"] = matched
                 log.info(f"--device given: running only {args.device} this session")
+            if args.condition:
+                cfg["_condition_filter"] = set(args.condition)
+                log.info(f"--condition given: rows 3/5/8 run only {sorted(args.condition)}")
             pairing_agent = start_pairing_agent()
-            row2_will_run = args.row in ("2", "3", "4", "6", "all") and cfg[
+            row2_will_run = args.row in ("2", "3", "4", "5", "8", "all") and cfg[
                 "row2_duty_cycle"
             ].get("enabled")
-            row5_will_run = args.row in ("5", "all") and cfg["row5_contention"].get(
-                "enabled"
-            )
             kill_stray_driver_processes(cfg)
+            check_devices_unbonded(cfg)
+            check_ros_packages(cfg)
             check_bt_controller_ready(cfg["btmon_controller"])
+            check_ble_sniffer_ready(cfg)
             _log_controller_info(cfg["btmon_controller"], session_dir)
+            log_wifi_rfkill_state(session_dir)
+            if (cfg.get("disable_internal_wifi") or {}).get("enabled", True):
+                rfkill_id = disable_internal_wifi_for_session(test_mode)
+            # Rows 2-5 poll QBSS during every run.
+            check_wifi_scan_ready(cfg, need_qbss=row2_will_run)
+            ambient_cfg = cfg.get("ambient_scan") or {}
+            if ambient_cfg.get("enabled"):
+                occupancy_poller = start_channel_occupancy_poller(
+                    ambient_cfg.get("iface"),
+                    session_dir / "channel_occupancy.csv",
+                    poll_interval_s=ambient_cfg.get("poll_interval_s", 60),
+                )
             if row2_will_run:
                 check_pi_reachable(cfg["row2_duty_cycle"]["iperf"])
+                check_pi_wifi_link(cfg["row2_duty_cycle"]["iperf"])
                 cfg["row2_duty_cycle"]["iperf"]["bitrate_by_duty"] = (
-                    resolve_duty_bitrates(cfg, strict=not test_mode)
+                    resolve_duty_bitrates(
+                        cfg, strict=not test_mode, session_dir=session_dir
+                    )
                 )
                 settle = cfg["row2_duty_cycle"]["iperf"].get("settle_delay_s", 0)
                 if settle < STARTUP_GRACE_S:
@@ -855,19 +898,6 @@ def main():
                         f"less than STARTUP_GRACE_S ({STARTUP_GRACE_S}s) -- drops "
                         f"caused by traffic starting could be silently hidden "
                         f"inside the startup grace window"
-                    )
-            if row5_will_run:
-                num_peripherals = cfg["row5_contention"].get("num_peripherals") or {}
-                if (
-                    num_peripherals.get("mid") is None
-                    or num_peripherals.get("max") is None
-                ):
-                    raise InfrastructureCheckError(
-                        "row5_contention.num_peripherals.mid/max is unset in "
-                        "config.yaml -- an unlabeled peripheral count makes the "
-                        "dose-response conditions meaningless for the write-up. "
-                        "Fill these in before running Row 5 (or disable Row 5 "
-                        "for this session)."
                     )
             check_devices_ready(cfg)
             for device in cfg["devices"]:
@@ -885,9 +915,9 @@ def main():
                         cfg, session_dir, session_ts, device, completed
                     )
                     run_test4_endurance(cfg, session_dir, session_ts, device, completed)
-                    # run_test5_contention(
-                    #     cfg, session_dir, session_ts, device, completed
-                    # )
+                    run_test5_headroom_sweep(
+                        cfg, session_dir, session_ts, device, completed
+                    )
                 elif args.row == "1":
                     run_test1_connection_interval(
                         cfg, session_dir, session_ts, device, completed
@@ -903,11 +933,11 @@ def main():
                 elif args.row == "4":
                     run_test4_endurance(cfg, session_dir, session_ts, device, completed)
                 elif args.row == "5":
-                    run_test5_contention(
+                    run_test5_headroom_sweep(
                         cfg, session_dir, session_ts, device, completed
                     )
-                elif args.row == "6":
-                    run_test6_headroom_sweep(
+                elif args.row == "8":
+                    run_test8_headroom_saturation(
                         cfg, session_dir, session_ts, device, completed
                     )
             log.info("=== Run complete, parsing captures ===")
@@ -933,7 +963,16 @@ def main():
         do_parse(cfg, session_dir, session_ts)
         sys.exit(1)
     finally:
+        # Drivers run in their own session, so Ctrl+C doesn't reach them --
+        # stop any still running and release their devices, or the next
+        # session starts with a stray link on the shared radio.
+        stop_all_drivers()
+        for device in (cfg.get("devices") or []) if args.command == "run" else []:
+            if device.get("mac_address") and _link_is_up(device["mac_address"]):
+                disconnect_ble_device(device["mac_address"])
         stop_pairing_agent(pairing_agent)
+        stop_channel_occupancy_poller(occupancy_poller)
+        restore_internal_wifi(rfkill_id)
 
 
 if __name__ == "__main__":
