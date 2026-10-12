@@ -37,7 +37,7 @@ holding that session's log, btsnoop captures, manifest.csv, and
 results.csv together as a self-contained unit.
 
 Usage:
-    python3 chamber_session.py run                # run rows 1-5 back-to-back (default)
+    python3 chamber_session.py run                # run rows 1-5 and 8 back-to-back (default)
     python3 chamber_session.py run --row 1        # run only Row 1
     python3 chamber_session.py parse              # re-parse the most recent session
     python3 chamber_session.py parse --session 20260918_121724  # re-parse a specific one
@@ -89,6 +89,7 @@ from session_lib import (
     check_pi_reachable,
     check_pi_wifi_link,
     check_wifi_scan_ready,
+    check_no_foreign_wifi,
     disable_internal_wifi_for_session,
     do_parse,
     do_run,
@@ -99,6 +100,7 @@ from session_lib import (
     load_config,
     log,
     log_wifi_rfkill_state,
+    snapshot_environment,
     prepare_rerun_failed,
     reset_host_channel_classification,
     resolve_duty_bitrates,
@@ -643,7 +645,8 @@ def run_test4_endurance(cfg, session_dir, session_id, device, completed=frozense
 def run_test8_headroom_saturation(
     cfg, session_dir, session_id, device, completed=frozenset()
 ):
-    """Opt-in (--row 8, not in --row all), added 2026-10-06: Row 5's
+    """Added 2026-10-06 (opt-in at first; part of --row all since
+    2026-10-07, after Row 5): Row 5's
     headroom sweep repeated at 100% load for a few k values, to test whether
     Row 5's 75% result holds at the top of the load range -- e.g. whether
     the Polar's "fully recovered from k=2" cliff stays at k=2. Same masks
@@ -733,8 +736,7 @@ def main():
         "--row",
         default="all",
         choices=["1", "2", "3", "4", "5", "8", "all"],
-        help="Which row to run, or 'all' for rows 1, 2, 3, 4, 5 in that order. "
-        "Row 8 (headroom at 100%% load) is opt-in: run it with --row 8. "
+        help="Which row to run, or 'all' for rows 1, 2, 3, 4, 5, 8 in that order. "
         "(Rows 6, BLE-BLE contention, and 7, QBSS scan interference, were "
         "removed 2026-10-06; their past data still parses.)",
     )
@@ -872,10 +874,12 @@ def main():
             check_ble_sniffer_ready(cfg)
             _log_controller_info(cfg["btmon_controller"], session_dir)
             log_wifi_rfkill_state(session_dir)
+            snapshot_environment(cfg, session_dir)
             if (cfg.get("disable_internal_wifi") or {}).get("enabled", True):
                 rfkill_id = disable_internal_wifi_for_session(test_mode)
             # Rows 2-5 poll QBSS during every run.
             check_wifi_scan_ready(cfg, need_qbss=row2_will_run)
+            check_no_foreign_wifi(cfg, session_dir, test_mode)
             ambient_cfg = cfg.get("ambient_scan") or {}
             if ambient_cfg.get("enabled"):
                 occupancy_poller = start_channel_occupancy_poller(
@@ -916,6 +920,9 @@ def main():
                     )
                     run_test4_endurance(cfg, session_dir, session_ts, device, completed)
                     run_test5_headroom_sweep(
+                        cfg, session_dir, session_ts, device, completed
+                    )
+                    run_test8_headroom_saturation(
                         cfg, session_dir, session_ts, device, completed
                     )
                 elif args.row == "1":

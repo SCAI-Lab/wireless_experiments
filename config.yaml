@@ -1,6 +1,6 @@
 # =============================================================================
-# Chamber session run plan — Rows 1-5 (connection interval, duty cycle, forced channel,
-# endurance, headroom sweep). Rows 6 (BLE-BLE contention) and 7 (QBSS scan
+# Chamber session run plan — Rows 1-5 and 8 (connection interval, duty cycle, forced channel,
+# endurance, headroom sweep, headroom at 100% load). Rows 6 (BLE-BLE contention) and 7 (QBSS scan
 # interference) were removed 2026-10-06.
 # Edit devices/conditions/durations here; run_session.py reads this directly.
 # =============================================================================
@@ -86,6 +86,18 @@ ambient_scan:
   poll_interval_s: 60
 
 # ---------------------------------------------------------------------------
+# Chamber RF check at session start (added 2026-10-07): no WiFi AP other
+# than the test AP (qbss_bssid) may be on a channel overlapping the test
+# channel -- a 20 MHz channel-6 signal spreads into channels 3-9. Aborts a
+# real session, only warns in --test-mode. APs on other channels only warn.
+# Uses ambient_scan.iface; result saved as foreign_wifi_check.json.
+# fail_channels defaults to row2_duty_cycle.iperf.ap_channel +/- 3.
+# ---------------------------------------------------------------------------
+foreign_wifi_check:
+  enabled: true
+  # fail_channels: [3, 4, 5, 6, 7, 8, 9]
+
+# ---------------------------------------------------------------------------
 # Soft-blocks the internal WiFi radio (the iwlwifi-driven CNVi combo card
 # that shares a physical antenna with the Bluetooth controller under test --
 # see _qbss_iface_is_safe's confirmed finding) for the duration of a real
@@ -127,9 +139,13 @@ devices:
     # session_lib/run_checks.py). polar_hr is the one that catches a strap without skin
     # contact: the driver publishes HR only when it's > 0 bpm, while ECG/ACC
     # stream regardless (picking up mains hum when off-body).
-    expected_topics: ["polar_acc", "polar_ecg", "polar_hr"]
+    expected_topics: ["polar_acc", "polar_ecg"]
+    # Checked and logged as a warning, but never fail a run. polar_hr was
+    # required until 2026-10-06; in the chamber the strap isn't on skin, so
+    # it failed every baseline although no result uses HR.
+    advisory_topics: ["polar_hr"]
   - name: Corsano
-    mac_address: "F1:3B:40:28:CB:EC"
+    mac_address: "D9:D9:DF:CB:74:79"
     # Command used to launch this device's ros4hc driver.
     # Adjust to your actual ros2 launch invocation.
     # --test-republish-latest: TEST ONLY. The driver normally publishes BioZ/ACC
@@ -141,7 +157,7 @@ devices:
     # --plan HOSPITAL_RAW: the driver's default HOSPITAL_MULTICOLOR never
     # records raw ACC (20261005_110316 and 20261006_000828 both had zero ACC
     # file growth under it).
-    launch_cmd: "ros2 run corsano_ros corsano_ros --mac-address-or-name F1:3B:40:28:CB:EC --publish-bioz --publish-accel --publish-hr --publish-stress --plan HOSPITAL_RAW --test-republish-latest"
+    launch_cmd: "ros2 run corsano_ros corsano_ros --mac-address-or-name D9:D9:DF:CB:74:79 --publish-bioz --publish-accel --publish-hr --publish-stress --plan HOSPITAL_RAW --test-republish-latest"
     driver_source_dir: "/home/monicaperez/test_ws/src/ros4healthcare/ros2_hc_drv/corsano_ros"
     # publish_battery defaults to True in corsano_ros_wrapper.py and isn't
     # disabled above, so this is already being recorded into every run's
@@ -440,7 +456,8 @@ row5_headroom_sweep:
   # before load begins.
 
 # ---------------------------------------------------------------------------
-# Row 8 (opt-in, --row 8; NOT part of --row all): Row 5's headroom sweep at
+# Row 8 (part of --row all since 2026-10-07, runs after Row 5; set
+# enabled: false to skip it): Row 5's headroom sweep at
 # 100% load for a few k values, added 2026-10-06 after review. Row 5 runs at
 # 75%, so on its own it can't say whether its result (Polar fully recovers
 # from k=2; Corsano improves gradually up to k=8) holds at the top of the

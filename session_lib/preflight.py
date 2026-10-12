@@ -24,6 +24,7 @@ from .wifi import (
     _autodetect_wifi_iface,
     _freq_mhz_to_24ghz_channel,
     _ensure_iface_unmanaged,
+    _iw_scan,
     _parse_channel_occupancy,
     _qbss_from_scan_output,
     _qbss_iface_is_safe,
@@ -477,10 +478,13 @@ def check_wifi_scan_ready(cfg, need_qbss, attempts=3):
         if not up:
             raise InfrastructureCheckError(
                 f"WiFi scan interface {iface} is DOWN, so every {what} scan would "
-                f"fail with 'Network is down' and record nothing. Bring it up and "
-                f"retry: `nmcli device set {iface} managed yes`, wait a few "
-                f"seconds for it to come up (`ip -br link show {iface}`), then "
-                f"start the session again (it re-unmanages the adapter itself)."
+                f"fail with 'Network is down' and record nothing. Run "
+                f"`sudo ip link set {iface} up`, then start the session again. "
+                f"(Don't use `nmcli ... managed yes`: this check unmanages the "
+                f"adapter, and NetworkManager takes it down again as it lets go "
+                f"-- that loop stopped a session on 2026-10-06. Brought up while "
+                f"unmanaged, it stays up until it's replugged or the laptop "
+                f"reboots.)"
             )
         result = None
         for _ in range(attempts):
@@ -543,6 +547,120 @@ def check_wifi_scan_ready(cfg, need_qbss, attempts=3):
                         f"row2_duty_cycle.iperf.ap_channel if it moved on purpose"
                     )
                 log.info(f"     test AP on channel {channel}, as expected")
+
+
+def _scan_bsses(scan_stdout):
+    """{bssid: {"ssid", "channel", "signal_dbm"}} for every 2.4 GHz BSS."""
+    out = {}
+    for block in re.split(r"^BSS ", scan_stdout, flags=re.MULTILINE)[1:]:
+        bssid = block[:17].lower()
+        freq = re.search(r"freq:\s*([\d.]+)", block)
+        channel = _freq_mhz_to_24ghz_channel(float(freq.group(1))) if freq else None
+        if channel is None:
+            continue
+        sig = re.search(r"signal:\s*(-?[\d.]+)", block)
+        ssid = re.search(r"^\s*SSID:\s*(.*)$", block, re.MULTILINE)
+        name = ssid.group(1).strip() if ssid else ""
+        if re.fullmatch(r"(\\x00)*", name):  # iw prints hidden SSIDs as \x00...
+            name = ""
+        out[bssid] = {
+            "ssid": name,
+            "channel": channel,
+            "signal_dbm": float(sig.group(1)) if sig else None,
+        }
+    return out
+
+
+def check_no_foreign_wifi(cfg, session_dir, test_mode, scans=2):
+    """Chamber RF check (added 2026-10-07): no WiFi AP other than the test AP
+    may be on a channel overlapping the test channel. Session 20261006_173125
+    saw 2 foreign APs on channel 6 and 13-25% airtime with NO load, so its
+    "no load" conditions weren't interference-free.
+
+    A 20 MHz channel-6 signal spreads into channels 3-9 (any AP within 3
+    channels overlaps it), so those are checked: config
+    foreign_wifi_check.fail_channels, default test-AP channel +/-3. A
+    foreign AP there aborts a real session and only warns in --test-mode.
+    Foreign APs on other channels only warn: they don't touch BLE 12-19,
+    but they do sit on Row 5's added "clean" channels (e.g. WiFi 1 covers
+    BLE 0-9). Unions `scans` scans, since one scan can miss a beacon.
+    Sees only APs (beacons), not client devices. Writes the result to
+    <session_dir>/foreign_wifi_check.json."""
+    fcfg = cfg.get("foreign_wifi_check") or {}
+    if fcfg.get("enabled") is False:
+        log.info("  -> foreign WiFi check disabled (foreign_wifi_check.enabled)")
+        return
+    iperf_cfg = (cfg.get("row2_duty_cycle") or {}).get("iperf") or {}
+    iface = (cfg.get("ambient_scan") or {}).get("iface") or iperf_cfg.get("qbss_iface")
+    if not iface:
+        log.warning("  -> foreign WiFi check skipped: no scan adapter configured")
+        return
+    test_bssid = (iperf_cfg.get("qbss_bssid") or "").lower()
+    ap_channel = iperf_cfg.get("ap_channel", 6)
+    fail_channels = set(fcfg.get("fail_channels") or range(ap_channel - 3, ap_channel + 4))
+    log.info(
+        f"  -> checking for foreign WiFi APs on {iface} ({scans} scans; "
+        f"channels {sorted(fail_channels)} must be clear apart from the test AP)..."
+    )
+    seen = {}
+    for i in range(scans):
+        for _ in range(4):  # retry "Device or resource busy" (-16), as check_wifi_scan_ready does
+            try:
+                result = _iw_scan(iface)
+            except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                raise InfrastructureCheckError(f"foreign WiFi check: scan on {iface} failed: {e}")
+            if result.returncode == 0 or "(-16)" not in result.stderr:
+                break
+            time.sleep(2)
+        if result.returncode != 0:
+            if i == scans - 1 and not seen:
+                raise InfrastructureCheckError(
+                    f"foreign WiFi check: scan on {iface} failed: {result.stderr.strip()[:200]}"
+                )
+            time.sleep(2)
+            continue
+        seen.update(_scan_bsses(result.stdout))
+        if i < scans - 1:
+            time.sleep(2)
+    foreign = {b: v for b, v in seen.items() if b != test_bssid}
+    blocking = {b: v for b, v in foreign.items() if v["channel"] in fail_channels}
+    other = {b: v for b, v in foreign.items() if v["channel"] not in fail_channels}
+    (Path(session_dir) / "foreign_wifi_check.json").write_text(json.dumps({
+        "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "iface": iface,
+        "test_ap": test_bssid,
+        "test_ap_seen": test_bssid in seen,
+        "fail_channels": sorted(fail_channels),
+        "foreign_overlapping": blocking,
+        "foreign_other_channels": other,
+    }, indent=2) + "\n")
+
+    def _fmt(aps):
+        return "; ".join(
+            f"{v['ssid'] or '<hidden>'} ({b}) ch {v['channel']}, {v['signal_dbm']} dBm"
+            for b, v in sorted(aps.items(), key=lambda kv: kv[1]["channel"])
+        )
+
+    if other:
+        log.warning(
+            f"     {len(other)} foreign AP(s) on other channels (not overlapping "
+            f"BLE 12-19, but on Row 5's added channels): {_fmt(other)}"
+        )
+    if blocking:
+        message = (
+            f"{len(blocking)} foreign WiFi AP(s) on channels overlapping the test "
+            f"channel {ap_channel}: {_fmt(blocking)} -- the chamber isn't "
+            f"RF-clean; 'no load' runs would carry this interference. Find and "
+            f"switch them off (or check the chamber door/seal), then restart."
+        )
+        if not test_mode:
+            raise InfrastructureCheckError(message)
+        log.warning(f"     {message} -- continuing anyway (test mode)")
+        return
+    log.info(
+        f"     no foreign APs on channels {sorted(fail_channels)} "
+        f"({len(seen)} BSS(es) seen in total)"
+    )
 
 
 def check_pi_reachable(iperf_cfg, timeout_s=5):

@@ -11,6 +11,7 @@ from .ble_radio import (
     FORCED_CHANNEL_RANGE,
     _encode_channel_classification,
 )
+from .logs import log
 
 
 # A run only counts as a real PASSED if the BLE link stayed up for at least
@@ -117,7 +118,7 @@ EXPECTED_INSTABILITY_ROW_CONDITIONS = {
     ("row5", "headroom_k2_duty75pct"),
     ("row5", "headroom_k4_duty75pct"),
     ("row5", "headroom_k8_duty75pct"),
-    # Row 8: Row 5's sweep at 100% load (opt-in, added 2026-10-06) -- same
+    # Row 8: Row 5's sweep at 100% load (added 2026-10-06) -- same
     # reasoning. Add a line here if row8_headroom_saturation.k_values grows.
     ("row8", "headroom_k2_duty100pct"),
     ("row8", "headroom_k8_duty100pct"),
@@ -278,16 +279,27 @@ def check_data_published(device_cfg, rosbag_dir, parsed):
     So two checks: each topic in the device's config.yaml expected_topics
     must have >= 1 message, and for the Corsano the watch's own file
     counters must have grown (parsed["corsano_new_sensor_data"]), which
-    catches stale republishing whatever driver version is installed."""
+    catches stale republishing whatever driver version is installed.
+
+    advisory_topics are checked the same way but only logged as a warning,
+    never a problem: the Polar's polar_hr (published only with skin contact)
+    moved there 2026-10-06, because in the chamber the strap isn't on skin
+    and HR then failed every baseline, though no result uses HR -- ECG/ACC
+    (still required) show data flow, and completeness comes from them."""
     expected = (device_cfg or {}).get("expected_topics") or []
+    advisory = (device_cfg or {}).get("advisory_topics") or []
     problems = []
     counts = rosbag_topic_counts(rosbag_dir)
-    if expected and counts is None:
+    if (expected or advisory) and counts is None:
         return None
     for topic in expected:
         full = topic if topic.startswith("/") else f"/{topic}"
         if counts.get(full, 0) == 0:
             problems.append(f"no messages on {full}")
+    for topic in advisory:
+        full = topic if topic.startswith("/") else f"/{topic}"
+        if counts.get(full, 0) == 0:
+            log.warning(f"     (advisory) no messages on {full} -- not failing the run")
     if parsed.get("corsano_new_sensor_data") is False:
         problems.append(
             "the watch recorded no new ACC/BioZ/stress data (its files didn't grow)"

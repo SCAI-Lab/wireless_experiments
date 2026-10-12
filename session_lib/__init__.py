@@ -82,9 +82,11 @@ from .preflight import (  # noqa: F401
     check_pi_reachable,
     check_pi_wifi_link,
     check_wifi_scan_ready,
+    check_no_foreign_wifi,
     kill_stray_driver_processes,
     resolve_duty_bitrates,
 )
 from .run import do_run  # noqa: F401
+from .environment import snapshot_environment  # noqa: F401
 from .btmon_parse import STARTUP_GRACE_S  # noqa: F401
 from .session_parse import do_parse  # noqa: F401

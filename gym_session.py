@@ -74,6 +74,7 @@ from session_lib import (
     prepare_rerun_failed,
     run_key,
     setup_logging,
+    snapshot_environment,
     start_ble_density_poller,
     start_channel_occupancy_poller,
     start_pairing_agent,
@@ -237,6 +238,7 @@ def main():
     pairing_agent = None
     try:
         if args.command == "run":
+            snapshot_environment(cfg, session_dir, load_client=False)
             pairing_agent = start_pairing_agent()
             check_bt_controller_ready(cfg["btmon_controller"])
             check_devices_ready(cfg)
