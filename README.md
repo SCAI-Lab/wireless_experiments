@@ -30,10 +30,12 @@ rehab gym (`gym_session.py`). Both scripts share one `config.yaml` and the
 | Script | Occasion | What it does |
 |---|---|---|
 | `chamber_session.py` | Controlled anechoic-chamber day (the main experiment) | Rows 1–5 and 8 by default: connection-interval calibration, WiFi offered-load sweep, forced-channel AFH test, endurance runs, headroom sweep. |
-| `gym_session.py` | A separate, later visit to a real rehab gym | Passive observation only: no AP, no generated traffic. One sensor at a time, listening to whatever the gym's RF environment is that day. |
+| `gym_session.py` | A separate, later visit to a real rehab gym | Sensor tests under the gym's own WiFi (no AP, no Pi): free channel selection plus forced k = 0, 2, 8 on the gym's busiest channel, in randomised blocks. |
+| `background_monitor.py` | Alongside a gym session (or a chamber airtime check) | Separate process on separate radios: WiFi airtime on the forced channel (T3U Plus, monitor mode), network counts, Bluetooth advertiser counts (nRF sniffer), people counts. |
 
-> **"Row 6" naming:** the gym script calls its block "Row 6". This is unrelated
-> to chamber row numbers. The chamber script's old row 6 (BLE-BLE contention)
+> **"Row 6" naming:** older gym sessions label their runs "row6"; since
+> 2026-10-12 the gym uses `gym_free` / `gym_forced`. Neither relates to
+> chamber row numbers. The chamber script's old row 6 (BLE-BLE contention)
 > and row 7 (QBSS scan interference) were **removed on 2026-10-06**, but their
 > data in older sessions still parses. The new headroom-at-100% row is
 > numbered **8**, so its label never collides with that older data.
@@ -293,9 +295,19 @@ run was retried. `results.csv` still keeps every attempt.
 
 | Command | Effect |
 |---|---|
-| `python3 gym_session.py run` | Passive gym observation, both devices one after the other. |
-| `… run --resume` / `--resume --rerun-failed` | Same as for the chamber script. |
-| `python3 gym_session.py parse [--session …]` | Re-parse a gym session. |
+| `python3 gym_session.py run` | Everything, in a new `captures/gym_<date>_<time>/`: survey → background monitor (child process) → sensor runs → parse. |
+| `… run --resume` | Continue the latest `gym_` session (done parts/runs are skipped). `--session NAME` for a specific one. |
+| `… run --resume --rerun-failed` | Also re-attempt FAILED runs (captures moved aside first). |
+| `… run --only survey` / `--only monitor` / `--only sensors` | Just that part; repeat to combine (e.g. `--only monitor --only sensors`). Monitor-only runs until Ctrl+C. |
+| `… run --wifi-channel N` | Force channel N instead of the survey's busiest. |
+| `python3 gym_session.py people N` | Log a people count any time. The run doesn't ask for counts unless `people_count_prompts: true` in config.yaml. |
+| `python3 gym_session.py masks` | Show the session's forced-channel masks (no hardware). |
+| `python3 gym_session.py parse` | `results.csv` + `results_with_background.csv`. |
+| `python3 gym_session.py covariates --session <any TS>` | Only the background join (works on a chamber session with `background/` too). |
+
+`background_monitor.py` can also be run on its own (`check`, `survey`,
+`run`, `people`); `python3 background_monitor.py check` is the 10 s hardware
+self-test.
 
 **Requirements:** sudo access for btmon, the ROS 2 environment sourced, and
 (for the chamber script's load rows) passwordless SSH to the Pi.
@@ -422,29 +434,123 @@ depending on the condition:
 
 ## 11. Gym visit (gym_session.py)
 
-A separate, later occasion. It is **not** part of the chamber day and not a
-controlled experiment, just observation. It is a ground-truth check on
-whether the chamber's load range and fading assumptions match a real gym.
+A separate, later occasion: the chamber's forced-channel test repeated
+under a real gym's WiFi. No AP, no Pi, no iperf3 — the gym's traffic is
+the load.
+
+**One command, separate processes.** `gym_session.py run` starts
+`background_monitor.py` as its own child process for the background
+monitoring: its own radios, its own log (`background/monitor.log`), never
+hci0, restarted if it dies. The sensor runs stay in `gym_session.py`. The two
+are joined afterwards by wall-clock time.
+
+| | `background_monitor.py` | `gym_session.py` |
+|---|---|---|
+| Radios | T3U Plus (monitor mode, passive), nRF sniffer (unfollowed) | hci0 only |
+| Writes | `background/`: `airtime.csv` (forced channel, every 15 s), `sweep.csv` + `networks.csv` (all channels, every 15 min), `ble_advertisers.csv` (per minute), `people.csv`, `survey.csv`, `forced_channel.json` | btsnoop, `_afh.csv` (map + RSSI every 15 s), rosbag, driver log, `manifest.csv`, `gym_masks.json`, `gym_schedule.json` |
+
+**Design.** Conditions `free_channel` and `forced_k0/k2/k8`, every one once
+per randomised block, 3 blocks × 2 devices × 300 s = 24 runs (~2.5 h).
+Device order alternates block by block, so device isn't confounded with
+time of day; devices never stream together. k = 0 is the BLE channels fully
+inside the forced WiFi channel (12–19 for channel 6, as in the chamber).
+The k extras are, by default, the quietest channels in the survey, split
+below and above the forced channel (`gym_session.extra_channels`). Masks
+are frozen in `gym_masks.json` on the first run. Plan at least 2 busy days
+and 1 quiet day. Use the same stand, height and distance as the chamber.
+
+**Order of the day:**
+
+```
+python3 background_monitor.py check     # once: adapter + sniffer work (prints only)
+python3 gym_session.py run              # survey (~7 min) + monitor + 24 runs (~2.5 h)
+python3 gym_session.py run --resume     # after any interruption
+```
+
+It asks for the sudo password once (monitor mode). People counts are logged
+by hand with `gym_session.py people N`. With `people_count_prompts: true` in
+config.yaml, it instead asks at the start, at each block boundary and at the
+end, and waits until you type a number. Gym sessions are named
+`gym_<date>_<time>`; the chamber scripts' own "latest session" never picks
+a `gym_` folder.
+
+**At start: advertising check.** After the driver probes, each sensor
+must be seen advertising on hci0 (two 6 s scans at most), or the session
+stops with "not advertising" before any run.
+
+**Before every run: signal check.** A 6 s scan on hci0 reads the sensor's
+advertising RSSI (our sensor only; between runs, so nothing is recorded)
+and compares it with its reference (`gym_session.rssi_reference_dbm`, or
+the session's first reading, taken automatically). Outside ±8 dB, or not
+advertising, it logs a warning and the run starts anyway. The session
+never waits for input once the runs have started. Logged in
+`pre_run_checks.csv` and carried into the analysis.
+
+**Results.** `gym_session.py parse` (and the end of `run`) writes
+`results.csv`, `results_with_background.csv` and the chamber's analysis in
+`analysis/<session>/`. **The table to analyse is
+`analysis/<session>/tables/per_run.csv`**: added delay, deadline misses,
+link losses, Corsano delivery and AFH maps as in the chamber, plus the gym
+covariates (`bg_*` airtime, Bluetooth crowding, people, networks; the
+forced mask's real channel count `forced_channels_n` and its extras'
+airtime `forced_extra_airtime_survey_pct` / `_sweep_pct`; the pre-run RSSI
+and note). Corsano ACC/BioZ "completeness" from results.csv is an artefact
+and is left out of `results_with_background.csv`; use delivery
+(`payload_Bps`, relative to the session's free-channel median) instead.
+
+The sensor runs wait for the monitor's first airtime reading before
+starting. With `--only sensors` the monitor must already be running
+elsewhere (`--allow-no-monitor` overrides). The internal WiFi is
+soft-blocked for the session, as in the chamber (`--test-mode` leaves it on;
+not valid gym data).
+
+**Receiver faults.** A window whose airtime can't be trusted is written
+with a blank `airtime_pct` and a reason in `airtime.csv`'s `fault` column,
+and the analysis leaves it out:
+- `stalled`: no frames at all. The monitor retunes, then bounces the interface.
+- `driver_errors=N`: the kernel log has rtw88/mac80211 receive errors
+  ("Rate marked as a VHT rate but data is invalid", "unused phy status
+  page"). The adapter is decoding garbage and airtime reads ~100%.
+- `collapse: ...`: beaconing networks drop below 30% of the recent median
+  while airtime is at or above 50%. This is the same fault seen without the
+  kernel log.
+
+For the last two, the monitor bounces the interface. If the fault survives
+two bounces, it reloads the `rtw88_8822bu` module (thresholds in
+`background_monitor` in config.yaml).
+
+**Airtime.** The sum of every decoded frame's on-air time (tshark's
+`wlan_radio.duration`, preamble included) per window. It is a lower bound:
+undecodable frames, non-WiFi energy and backoff gaps aren't counted. Run the
+same monitor in the chamber (`gym_session.py run --session <chamber TS>
+--only monitor --wifi-channel 6`) so
+both sites sit on one axis. The chamber session's own QBSS and occupancy
+scans use the same T3U, which can't scan while in monitor mode: give the
+monitor a second USB adapter (`background_monitor.wifi_iface`) for that
+check, or run it as a separate short block.
 
 **Before running it in a clinical space:**
 
 - Get the facility's permission and let staff know you're there.
-- Sensors are on a mannequin and no patient data is collected, so no ethics
-  review should be needed, but confirm with the facility.
-- **Privacy (GDPR / Swiss FADP):** both pollers log only aggregate counts,
-  never individual MAC addresses. Don't add per-device logging.
-
-**What it captures:**
-
-- Per device, one after the other: the same btmon, AFH and rosbag capture as
-  in the chamber.
-- `channel_occupancy.csv`: WiFi occupancy per channel (1–13), every
-  `channel_occupancy_poll_interval_s` (60 s).
-- `ble_density.csv`: a count of nearby BLE devices only. It is **off by
-  default**, because it scans on the same radio as the sensor under test.
-
-Log ambient conditions (time of day, approximate occupancy) by hand
-alongside the capture.
+- No patient data is collected, so no ethics review should be needed for
+  the stand-mounted runs, but confirm with the facility. An on-body add-on
+  needs ethics clearance and is kept separate.
+- **Privacy (GDPR / Swiss FADP):**
+  - Background monitor: Bluetooth advertiser addresses and WiFi BSSIDs are
+    only held in memory to count distinct ones; only counts are written. The
+    sniffer streams through a FIFO (no pcap) and nrfutil runs at `error`
+    log level (at `info` it would log addresses and names). The per-run
+    sniffer capture is off in the gym.
+  - Sensor runs: while a driver looks for its sensor, btmon records every
+    advertiser the laptop hears, and the Polar driver prints every scanned
+    device with its name to `_driver.log` every 5 s if it can't find the
+    sensor. `privacy_scrub.py` runs after every gym run: it filters each
+    btsnoop to our own devices, checks the parsed metrics are identical and
+    btmon shows no foreign address, then replaces the raw file; device
+    lists in driver logs become a count. The drivers themselves are not
+    changed.
+  - Older sessions recorded outside the chamber (lab, dry runs) contain
+    colleagues' devices too: `python3 privacy_scrub.py captures/<session>`.
 
 ## 12. Other tools
 

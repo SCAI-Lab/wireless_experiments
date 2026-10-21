@@ -474,53 +474,86 @@ row8_headroom_saturation:
   k_values: [2, 8]
 
 # ---------------------------------------------------------------------------
-# Row 6 (gym_session.py's own numbering -- a different script for a
-# different occasion; chamber_session.py's old Row 6, contention, was
-# removed 2026-10-06): passive real-gym observation — NOT a controlled experiment.
-# No AP, no iperf3, no generic peripherals. Just one sensor + btmon,
-# listening to whatever ambient RF/BLE conditions the real gym has that day.
-# Purpose: ground-truth check for the simulation's duty-cycle range and
-# fading/multipath assumptions — see Row 9 (sensitivity sweep) for why
-# this specific check was prioritized over others.
+# Gym visit -- `gym_session.py run` drives both, as separate processes:
+#   background_monitor.py  passive RF monitoring on its own radios
+#   gym_session.py         the sensor tests on hci0
+# Joined afterwards by wall-clock time (gym_session.py parse). Neither
+# reads anything above this block except devices, btmon_controller,
+# channel_masks (gym_session.extra_channels: chamber) and session.
+# Replaces row6_passive_gym (2026-10-12); old row6 sessions still parse.
 # ---------------------------------------------------------------------------
-row6_passive_gym:
-  enabled: true
-  duration_s: 3600         # ~1 hour; extend if the gym session allows more time
-  replicates: 1
-  # Devices to run sequentially during the visit (not simultaneously —
-  # this is observational, not a contention test).
-  device_names: ["Corsano", "Polar_H10"]
-  # Per-channel (1-13) WiFi occupancy for the whole gym visit, via the same
-  # separate USB WiFi adapter used for row2_duty_cycle.iperf.qbss_iface
-  # (TP-Link AC1300/RTL8822BU as of 2026-09-23, its own physical radio,
-  # passes the combo-chip safety check). Written to <session_dir>/channel_
-  # occupancy.csv (timestamp_s, channel, ap_count, mean_channel_utilization_
-  # pct per channel per poll) -- this is what answers "occupied WiFi
-  # channels" / "mean busy fraction per channel" in Table tab:gym-
-  # observation, not just one AP's own load.
-  #
-  # Pinned explicitly, same reasoning as qbss_iface above -- left unset/null
-  # would fall back to session_lib.py's _autodetect_wifi_iface(), but this
-  # is more predictable for this deployment. Set to `false` (not null) to
-  # skip this poller entirely for a particular visit even if a safe adapter
-  # is plugged in.
-  channel_occupancy_iface: wlxc03a55a6e1bf
-  channel_occupancy_poll_interval_s: 60
-  # Nearby BLE device count, as a rough background-BLE-density proxy.
-  # PRIVACY (GDPR / Swiss FADP): only ever logs an aggregate integer count
-  # per poll -- never individual MAC addresses (see session_lib.py's
-  # count_nearby_ble_devices and this file's top-of-script note). Opt-in
-  # (enabled: false by default), unlike the WiFi poller above, because this
-  # one scans on hci0 -- the SAME radio the sensor under test is connected
-  # through -- so it briefly competes for airtime with the actual
-  # measurement. Kept short (scan_duration_s) and infrequent
-  # (poll_interval_s) to limit that. Before enabling this for a real visit:
-  # get the facility's permission and let staff know you're there.
-  ble_density_scan:
-    enabled: false
-    scan_duration_s: 5
-    poll_interval_s: 90
-  # Optional: if you have a way to poll RSSI periodically (e.g. a background
-  # `hcitool rssi` loop) note it here as a reminder; not automated by this
-  # script, since btmon alone doesn't guarantee RSSI in every HCI capture.
-  notes: "Bring one sensor + laptop only. Log ambient conditions (time of day, approx. occupancy, visible WiFi networks if known) manually alongside the capture."
+gym_session:
+  duration_s: 300
+  # Randomised blocks: each block = every condition once per device, in a
+  # seeded shuffled order. 4 conditions x 3 blocks x 2 devices = 24 runs.
+  blocks: 3
+  device_names: ["Polar_H10", "Corsano"]
+  # free_channel is always included; these are the forced conditions.
+  k_values: [0, 2, 8]
+  # Alternate device order block by block so device isn't confounded with
+  # time of day (devices still never stream at the same time).
+  interleave_devices: true
+  # survey: extras = the gym's quietest measured channels (default).
+  # chamber: channel_masks above verbatim -- only for forced WiFi channel 6.
+  extra_channels: survey
+  # Refuse to start if the monitor's last airtime row is older than this.
+  monitor_max_age_s: 90
+  # Ask for a people count at the start, at each block boundary (~every
+  # 45 min) and at the end; the session waits until a number is entered.
+  # false = never ask; counts are logged by hand (`gym_session.py people N`
+  # works any time).
+  people_count_prompts: false
+  # Before each run: the sensor's advertising RSSI on hci0 (rssi_scan_s
+  # scan, our sensor only) vs its reference. Out of tolerance or not
+  # advertising -> logged as a warning (pre_run_checks.csv) and the run
+  # starts anyway; the session never waits for input between runs.
+  # Reference: rssi_reference_dbm per device if set, else the first reading
+  # of the session, taken automatically. Advertising RSSI, so not directly the
+  # chamber's connection RSSI (-74 dBm Corsano, -45 Polar on 2026-10-07):
+  # fill these in from a pre-run reading in the chamber setup.
+  pre_run_rssi_check: true
+  rssi_scan_s: 6
+  rssi_tolerance_db: 8
+  rssi_reference_dbm:
+    Polar_H10: null
+    Corsano: null
+
+background_monitor:
+  # TP-Link Archer T3U Plus (rtw_8822bu), switched to monitor mode for the
+  # whole monitor run and back to managed on exit. Never the internal
+  # iwlwifi radio (shares an antenna with hci0; refused in code).
+  wifi_iface: wlxc03a55a6e1bf
+  # nRF52840 sniffer, used unfollowed for advertiser COUNTS only.
+  ble_sniffer_port: "/dev/ttyACM0"
+  # Airtime on the forced channel: one row per window.
+  airtime_report_s: 15
+  # Network-count sweep: hop these channels, sweep_dwell_s each, every
+  # sweep_interval_s. Forced-channel airtime has a gap of about
+  # (n_channels x (dwell + 0.2) + 2) s per sweep: ~30 s for 2.4 GHz only,
+  # ~75 s with the 5 GHz list below (empty it to keep the gap short).
+  sweep_interval_s: 900
+  sweep_dwell_s: 2.0
+  sweep_channels_24: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+  # 5 GHz only counts networks (not in the BLE band). Channels the
+  # regulatory domain disables are skipped.
+  sweep_channels_5: [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140]
+  # Survey before the session: picks the busiest channel by airtime.
+  survey_dwell_s: 15
+  survey_passes: 2
+  # Bluetooth crowding: distinct CRC-ok advertisers per window, counted in
+  # memory (addresses never written). "nearby" = strongest packet at or
+  # above this RSSI. An address needs ble_min_packets packets in a window
+  # to count (filters one-off corrupted addresses).
+  ble_window_s: 60
+  ble_nearby_rssi_dbm: -80
+  ble_min_packets: 2
+  # Receiver-fault detection (gym_20261013_133642: the rtw88 driver decoded
+  # garbage for 110 min and airtime read 100 %). A window is blanked
+  # (airtime.csv fault column) and the adapter reset if the kernel log has
+  # >= driver_errors_min WiFi-driver receive errors in it, or if beaconing
+  # networks drop below collapse_networks_frac x the recent healthy median
+  # while airtime is >= collapse_airtime_pct. Reset: interface bounce; on the
+  # 3rd faulty window in a row, reload the rtw88_8822bu module.
+  driver_errors_min: 3
+  collapse_networks_frac: 0.3
+  collapse_airtime_pct: 50

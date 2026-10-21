@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Experiment data and analysis outputs (large; may contain bystander BT/WiFi addresses)
+captures/
+analysis/
+analysis_compare/
+*.pcapng
+*.btsnoop
+*.png
+
+# Local / editor / tool files
+.claude/
+.~lock.*#
+Claude outputs/
+session_lib.zip
+
+# Third-party papers
+*.pdf
