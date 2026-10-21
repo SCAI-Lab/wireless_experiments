@@ -85,7 +85,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-SCRIPT_VERSION = "1.3.0"   # 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
+SCRIPT_VERSION = "1.4.1"   # 1.4.1: censoring-aware M(D) (samples acquired in [onset, end-D]); 1.4.0: last ACL fragment
+# previous: SCRIPT_VERSION = "1.3.0"   # 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
 
 # ----------------------------------------------------------------------------
 # constants
@@ -102,7 +103,7 @@ STARTUP_WINDOW_S = 15.0         # disconnects earlier than this after capture st
                                 # are startup artifacts (pre-existing link timing out)
 DEFAULT_SETTLE_S = 40.0         # driver launch -> traffic when the session has no iperf line
                                 # (chamber median: settle_delay_s 30 after a ~10 s connect)
-DEADLINES_MS = [100, 250, 500, 1000, 5000, 10000]
+DEADLINES_MS = [100, 250, 500, 1000, 4800, 5000, 9600, 10000]
 DRIFT_MIN_RUN_S = 200.0         # no-load runs at least this long feed the session drift estimate
 BTSNOOP_EPOCH_S = 62168256000.0 # btsnoop timestamps count from 0000-01-01; minus this = unix time
 # runaway backlog (Polar): added delay reaches RUNAWAY_DELAY_S and never falls back
@@ -124,32 +125,36 @@ WIFI_HALF_WIDTHS_MHZ = [("OFDM occupied (52 subcarriers)", 8.125), ("nominal 20 
 # 7.16 in double column, Times-family text at 8 pt, fonts embedded as TrueType
 # (no Type 3, for PDF eXpress), colours that stay distinct in grayscale print
 IEEE_SINGLE_COL_IN, IEEE_DOUBLE_COL_IN = 3.5, 7.16
-IEEE_RC = {
-    "font.family": "serif",
-    "font.serif": ["Times New Roman", "Liberation Serif", "DejaVu Serif"],   # TrueType only (Type 42)
-    "mathtext.fontset": "stix",
-    "font.size": 8, "axes.labelsize": 8, "axes.titlesize": 8, "legend.fontsize": 7,
+IEEE_RC = {   # SCAI Lab Figure Guide v8, white theme, sized for IEEE columns
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
+    "mathtext.fontset": "custom", "mathtext.rm": "Liberation Sans", "mathtext.it": "Liberation Sans:italic",
+    "font.size": 8, "axes.labelsize": 9, "axes.titlesize": 9, "legend.fontsize": 8,
     "xtick.labelsize": 8, "ytick.labelsize": 8,
-    "axes.linewidth": .5, "xtick.major.width": .5, "ytick.major.width": .5,
-    "xtick.minor.width": .4, "ytick.minor.width": .4, "xtick.direction": "in", "ytick.direction": "in",
-    "axes.grid": True, "grid.linewidth": .4, "grid.alpha": .3,
-    "legend.frameon": False, "legend.handlelength": 1.6,
+    "axes.linewidth": .8, "xtick.major.width": .8, "ytick.major.width": .8,
+    "xtick.minor.width": .6, "ytick.minor.width": .6,
+    "axes.spines.top": False, "axes.spines.right": False,
+    "axes.edgecolor": "#333333", "axes.labelcolor": "#111111", "text.color": "#111111",
+    "xtick.color": "#111111", "ytick.color": "#111111", "axes.facecolor": "#FAFBFC",
+    "axes.grid": False, "lines.linewidth": 2.0, "lines.solid_capstyle": "round",
+    "legend.frameon": True, "legend.facecolor": "#FAFBFC", "legend.edgecolor": "#D0D0D0",
+    "legend.framealpha": 1.0, "legend.handlelength": 1.8,
     "pdf.fonttype": 42, "ps.fonttype": 42,
 }
-TTL_STYLE = [("#eb6834", "s"), ("#0d366b", "o")]   # per device (sorted): Corsano, Polar_H10
+TTL_STYLE = [("#1A1A1A", "s"), ("#1478C8", "o")]   # per device (sorted): Corsano, Polar_H10
 
 # paper fig:deadline (deadline-miss curves + delay timelines)
 FIG_DEADLINE_LOAD_PCT = 75.0                      # headroom conditions shown in panel (a)
 FIG_DEADLINE_REFERENCE = "duty0pct"               # no-load reference curve (AFH free, no WiFi)
-FIG_DEADLINE_DEADLINES_MS = [250, 1000, 10000]    # marked on panel (a)
-FIG_DEADLINE_K_COLORS = {0: "#0d366b", 2: "#1c5cab", 4: "#3987e5", 8: "#86b6ef"}   # ordinal, dark = no headroom
+FIG_DEADLINE_DEADLINES_MS = [100, 250, 1000, 10000]    # marked on panel (a)
+FIG_DEADLINE_K_COLORS = {0: "#0A4C8A", 2: "#1478C8", 4: "#38A4DC", 8: "#6BAEE8"}   # ordinal, dark = no headroom
 # panel (b): every run in these conditions (all data ch 12-19, at FIG_DEADLINE_LOAD_PCT) in grey
 FIG_DEADLINE_TIMELINE_CONDITIONS = ["headroom_k0_duty75pct", "forced_channel_duty75pct"]
 # plus two highlighted runs under the same condition (data ch 12-19, 75 % load),
 # one bounded and one runaway: (session, condition, replicate, label, color)
 FIG_DEADLINE_TIMELINE_RUNS = [
-    ("20261008_010249_chamber_2", "headroom_k0_duty75pct", 1, "$k$ = 0, rep. 1", "#0d366b"),
-    ("20261008_010249_chamber_2", "forced_channel_duty75pct", 1, "ch 12\u201319, rep. 1", "#eb6834"),
+    ("20261008_010249_chamber_2", "headroom_k0_duty75pct", 1, "bounded run", "#1A1A1A"),
+    ("20261008_010249_chamber_2", "forced_channel_duty75pct", 1, "runaway run", "#1478C8"),
 ]
 
 # paper fig:headroom (Polar M(D) against headroom k; medians over runs, as Table tab:headroom)
@@ -226,6 +231,13 @@ def parse_capture(path, device):
     ev = dict(t0=t0, tend=tend, conns=[], updates=[], discs=[], dle=[], phy=[],
               notif=[], writes=[], reads=[], ecg=[], enc=0,
               advs=[], conn_cmds=[], scan_cmds=[], mgmt_disc_fail=[])
+    rx_pending = {}            # ACL connection handle -> notification awaiting continuation fragments
+
+    def _rx_complete(pend, t):
+        ev["notif"].append((t - t0, pend["h"], pend["L"]))
+        if pend["ts_ns"] is not None:
+            ev["ecg"].append((t - t0, pend["ts_ns"] / 1e9, (pend["L"] - 10) // 3, pend["h"]))
+
     for t, op, p in recs:
         if op == CTRL_EVT and len(p) >= 9:
             # cookie(4) evt(2) | Command Complete: opcode(2) status(1)
@@ -264,19 +276,38 @@ def parse_capture(path, device):
                 ev["conn_cmds"].append(t - t0)
             elif oc in (0x200C, 0x2042) and len(p) >= 5:            # Scan Enable
                 ev["scan_cmds"].append((t - t0, bool(p[3]), bool(p[4])))
-        elif op in (ACL_TX, ACL_RX) and len(p) >= 9:
+        elif op in (ACL_TX, ACL_RX) and len(p) >= 4:
+            conn = int.from_bytes(p[0:2], "little") & 0x0FFF
             if (int.from_bytes(p[0:2], "little") >> 12) & 3 == 1:  # continuation fragment: no L2CAP header
+                # 1.4.0: an ATT PDU reaches the host only with its last ACL
+                # fragment; under interference that can be hundreds of ms
+                # after the first (link-layer retransmissions), so the
+                # notification is stamped when it is complete.
+                pend = rx_pending.get(conn) if op == ACL_RX else None
+                if pend is not None:
+                    pend["got"] += int.from_bytes(p[2:4], "little")
+                    if pend["got"] >= pend["need"]:
+                        rx_pending.pop(conn)
+                        _rx_complete(pend, t)
                 continue
+            if len(p) < 9:
+                continue
+            if op == ACL_RX:
+                rx_pending.pop(conn, None)          # a new start fragment ends any stale one
             if int.from_bytes(p[6:8], "little") != 4:              # ATT only
                 continue
             att = p[8]
             L = int.from_bytes(p[4:6], "little") - 3               # ATT value length (L2CAP len)
             if op == ACL_RX and att == 0x1B and len(p) >= 11:
-                h = int.from_bytes(p[9:11], "little")
-                ev["notif"].append((t - t0, h, L))
+                pend = dict(h=int.from_bytes(p[9:11], "little"), L=L, ts_ns=None,
+                            need=int.from_bytes(p[4:6], "little") + 4,
+                            got=int.from_bytes(p[2:4], "little"))
                 if "polar" in device.lower() and len(p) >= 21 and p[11] == 0:
-                    ts_ns = int.from_bytes(p[12:20], "little")
-                    ev["ecg"].append((t - t0, ts_ns / 1e9, (L - 10) // 3, h))
+                    pend["ts_ns"] = int.from_bytes(p[12:20], "little")
+                if pend["got"] >= pend["need"]:
+                    _rx_complete(pend, t)
+                else:
+                    rx_pending[conn] = pend
             elif op == ACL_TX and att == 0x52:
                 ev["writes"].append(t - t0)
             elif op == ACL_TX and att == 0x0A:
@@ -857,6 +888,25 @@ def run_metrics(sdir, mrow, loginfo, background=None, drift=None, settle_s=DEFAU
         for D in DEADLINES_MS:
             ok = np.clip(np.floor((D - dw) * ECG_FS / 1000) + 1, 0, nw).sum()
             r[f"miss_age_{D}ms_pct"] = 100 * max(0.0, 1 - ok / exp_samples)
+        # censoring-aware M(D): only samples acquired in [onset, wend - D] are
+        # counted, so samples still queued when recording stopped are not
+        # scored against deadlines they could still have met
+        nn = a[:, 2].astype(int)
+        rep = np.repeat(np.arange(len(a)), nn)
+        jj = np.concatenate([np.arange(k) for k in nn]) if len(nn) else np.array([])
+        age_s = d_ms[rep] / 1000 + (nn[rep] - 1 - jj) / ECG_FS
+        ta = a[rep, 0] - age_s
+        add_s = d_ms[rep] / 1000
+        for D in DEADLINES_MS:
+            hi = wend - D / 1000
+            if hi - onset <= 1:
+                continue
+            exp_c = ECG_FS * (hi - onset)
+            sel = (ta >= onset) & (ta <= hi)
+            ok_age = np.count_nonzero(sel & (age_s <= D / 1000))
+            ok_add = np.count_nonzero(sel & (add_s <= D / 1000))
+            r[f"miss_age_cens_{D}ms_pct"] = 100 * max(0.0, 1 - ok_age / exp_c)
+            r[f"miss_cens_{D}ms_pct"] = 100 * max(0.0, 1 - ok_add / exp_c)
         r.update(backlog_metrics(a[w_, 0] - onset, dw / 1000))
         ecg_detail = dict(t=a[:, 0], delay_ms=d_ms, n=a[:, 2], onset=onset, wend=wend,
                           losses=[t for t, _ in losses], win=win)
@@ -1401,31 +1451,53 @@ def fig_delivery(df, figdir, sid):
     return savefig(fig, figdir, sid, "delivery")
 
 
+def nice_cond(c):
+    m = re.fullmatch(r"duty(\d+)pct(_long|_bracket)?", c)
+    if m:
+        return f"AFH free, {m.group(1)}%" + {"_long": ", 30 min", "_bracket": ", bracket", None: ""}[m.group(2)]
+    m = re.fullmatch(r"forced_channel_(?:duty(\d+)pct|no_load|max_load)(_bracket)?", c)
+    if m:
+        load = "no load" if "no_load" in c else ("100%" if "max_load" in c else f"{m.group(1)}%")
+        return f"ch 12\u201319, {load}" + (", bracket" if m.group(2) else "")
+    m = re.fullmatch(r"headroom_k(\d+)_(?:duty(\d+)pct|no_load)", c)
+    if m:
+        return f"$k$ = {m.group(1)}, " + (f"{m.group(2)}%" if m.group(2) else "no load")
+    return c
+
+
 def fig_channel_maps(df, figdir, sid):
-    d = df[~df.exclude & (df.afh_samples > 0)]
+    d = df[~df.exclude & (df.afh_samples > 0) & df.family.isin(["free", "constrained", "headroom"])]
     if d.empty:
         return None
     devs = sorted(d.device.unique())
-    fig, axes = plt.subplots(len(devs), 1, figsize=(9, 3.2 * len(devs)), squeeze=False)
-    for ax, dev in zip(axes[:, 0], devs):
-        g = d[d.device == dev].sort_values(["family", "headroom_k", "nominal_load_pct"])
-        conds = list(dict.fromkeys(g.condition))
-        M = np.zeros((len(conds), 37))
-        for i, c in enumerate(conds):
-            maps = [m for ms in g[g.condition == c]._maps for m in ms]
-            for m in maps:
-                for ch in m:
-                    M[i, ch] += 1
-            M[i] /= max(1, len(maps))
-        im = ax.imshow(M, aspect="auto", cmap="viridis", vmin=0, vmax=1)
-        ax.set_yticks(range(len(conds)))
-        ax.set_yticklabels(conds, fontsize=6)
-        ax.axvspan(11.5, 19.5, color="r", alpha=.12)
-        ax.set_xlabel("BLE data channel (shaded: overlapped by WiFi ch 6)")
-        ax.set_title(f"{dev}: fraction of time each channel was in the hop set", fontsize=9)
-        fig.colorbar(im, ax=ax, fraction=.02)
-    fig.tight_layout()
-    return savefig(fig, figdir, sid, "channel_maps")
+    from matplotlib.colors import LinearSegmentedColormap
+    cmap = LinearSegmentedColormap.from_list("scai", ["#FAFBFC", "#C8DFFA", "#1478C8", "#0A4C8A"])
+    with plt.rc_context(IEEE_RC):
+        fig, axes = plt.subplots(1, len(devs), figsize=(IEEE_DOUBLE_COL_IN, 2.9), squeeze=False,
+                                 gridspec_kw=dict(wspace=0.75))
+        for ax, dev in zip(axes[0], devs):
+            g = d[d.device == dev].sort_values(["family", "headroom_k", "nominal_load_pct"])
+            conds = list(dict.fromkeys(g.condition))
+            M = np.zeros((len(conds), 37))
+            for i, c in enumerate(conds):
+                maps = [m for ms in g[g.condition == c]._maps for m in ms]
+                for m in maps:
+                    for ch in m:
+                        M[i, ch] += 1
+                M[i] /= max(1, len(maps))
+            im = ax.imshow(M, aspect="auto", cmap=cmap, vmin=0, vmax=1, interpolation="nearest")
+            ax.set_yticks(range(len(conds)))
+            ax.set_yticklabels([nice_cond(c) for c in conds], fontsize=7)
+            for x in (11.5, 19.5):
+                ax.axvline(x, color="#111111", lw=.8, ls="--")
+            ax.set_xlabel("BLE data channel")
+            ax.set_title(dev.replace("_", " "), fontsize=9, fontweight="bold")
+            for sp in ax.spines.values():
+                sp.set_visible(False)
+        cb = fig.colorbar(im, ax=list(axes[0]), fraction=.025, pad=.02)
+        cb.set_label("Fraction of time in hop set")
+        cb.outline.set_visible(False)
+        return savefig(fig, figdir, sid, "channel_maps")
 
 
 def fig_polar_timelines(df, ecg_details, figdir, sid):
@@ -1485,6 +1557,23 @@ def miss_curve(e, Ds):
     return np.array([100 * max(0, 1 - e["n"][w & (e["delay_ms"] <= D)].sum() / exp) for D in Ds])
 
 
+def miss_curve_age_cens(e, Ds):
+    """Censoring-aware M(D) on sample age (framing included): only samples acquired in
+    [onset, wend - D] count; undelivered ones are misses."""
+    nn = e["n"].astype(int)
+    rep = np.repeat(np.arange(len(nn)), nn)
+    jj = np.concatenate([np.arange(k) for k in nn])
+    age = e["delay_ms"][rep] / 1000 + (nn[rep] - 1 - jj) / ECG_FS
+    ta = e["t"][rep] - age
+    out = []
+    for D in Ds:
+        hi = e["wend"] - D / 1000
+        exp_c = ECG_FS * (hi - e["onset"])
+        sel = (ta >= e["onset"]) & (ta <= hi)
+        out.append(100 * max(0, 1 - np.count_nonzero(sel & (age <= D / 1000)) / exp_c))
+    return np.array(out)
+
+
 def fig_paper_deadline(df, ecg_details, figdir):
     """Paper fig:deadline, IEEE double-column width, panels side by side.
     (a) deadline-miss curves pooled over sessions: headroom conditions at
@@ -1493,30 +1582,40 @@ def fig_paper_deadline(df, ecg_details, figdir):
     ecg_details is keyed by (session, capture_file)."""
     pol = df[~df.exclude & df.device.str.contains("olar")]
     pol = pol[[(r.session, r.capture_file) in ecg_details for r in pol.itertuples()]]
-    hr = pol[(pol.family == "headroom") & (pol.nominal_load_pct == FIG_DEADLINE_LOAD_PCT)]
+    hr = pol[(pol.family == "headroom") & (pol.nominal_load_pct == FIG_DEADLINE_LOAD_PCT)].copy()
+    # the confined condition at the same load is the identical channel map (k = 0)
+    conf = pol[(pol.condition == "forced_channel_duty75pct") & (pol.nominal_load_pct == FIG_DEADLINE_LOAD_PCT)].copy()
+    conf["headroom_k"] = 0.0
+    hr = pd.concat([hr, conf])
     ref = pol[(pol.family == "free") & (pol.condition == FIG_DEADLINE_REFERENCE)]
     if hr.empty:
         return None
     with plt.rc_context(IEEE_RC):
         Ds = np.logspace(1.5, 4.5, 80)
-        fig, (axa, axb) = plt.subplots(1, 2, figsize=(IEEE_DOUBLE_COL_IN, 2.4))
+        fig, (axa, axb) = plt.subplots(1, 2, figsize=(IEEE_DOUBLE_COL_IN, 2.25))
         series = [(f"$k$ = {int(k)}", g, FIG_DEADLINE_K_COLORS.get(int(k), "#256abf"), "-")
                   for k, g in hr.groupby("headroom_k")]
         if not ref.empty:
-            series.append(("no load", ref, "#555555", "--"))
+            series.append(("no load", ref, "#1A1A1A", "--"))
+        Ds = np.logspace(0.5, 4.25, 90)
         for lab, g, col, ls in series:
-            curves = [miss_curve(ecg_details[(r.session, r.capture_file)], Ds) for r in g.itertuples()]
-            axa.plot(Ds, np.mean(curves, axis=0), ls, color=col, lw=1.2,
-                     label=f"{lab} ($n$ = {len(curves)})")
+            curves = np.array([miss_curve_age_cens(ecg_details[(r.session, r.capture_file)], Ds) for r in g.itertuples()])
+            if len(curves) >= 10:
+                for c_ in curves:
+                    axa.plot(Ds, c_, "-", color=col, lw=0.6, alpha=0.35, zorder=1)
+            axa.plot(Ds, np.median(curves, axis=0), ls, color=col, lw=1.8,
+                     label=f"{lab} ({len(curves)})")
+        axa.axhline(1.0, color="#666666", lw=1.0, zorder=0)
         for D in FIG_DEADLINE_DEADLINES_MS:
-            axa.axvline(D, color="#999999", lw=.5, ls=":", zorder=0)
-            axa.text(D, 101.5, f"{D / 1000:g} s" if D >= 1000 else f"{D} ms", ha="center", va="bottom")
+            axa.axvline(D, color="#666666", lw=1.0, ls=":", zorder=0)
+            axa.text(D, 101.5, f"{D / 1000:g} s" if D >= 1000 else f"{D} ms",
+                     ha={100: "right", 250: "left"}.get(D, "center"), va="bottom")
         axa.set_xscale("log")
         axa.set_xlim(Ds[0], Ds[-1])
         axa.set_ylim(0, 100)
-        axa.set_xlabel("Deadline (ms)")
-        axa.set_ylabel("ECG samples missing deadline (%)")
-        axa.legend(loc="upper right")
+        axa.set_xlabel("Deadline $D$ (ms)")
+        axa.set_ylabel("Samples older than $D$, $M(D)$ (%)")
+        axa.legend(loc="lower left", handlelength=1.0, handletextpad=0.4, borderpad=0.3, borderaxespad=0.2, title="(runs)", fontsize=7.5, title_fontsize=7.5)
 
         def window(r):
             e = ecg_details[(r.session, r.capture_file)]
@@ -1529,7 +1628,7 @@ def fig_paper_deadline(df, ecg_details, figdir):
         hl = {(s_, c_, str(r_)) for s_, c_, r_, _, _ in FIG_DEADLINE_TIMELINE_RUNS}
         for r in same.itertuples():
             if (r.session, r.condition, str(r.replicate)) not in hl:
-                axb.plot(*window(r), "-", color="#c4c4c4", lw=.5, zorder=1)
+                axb.plot(*window(r), "-", color="#C4C4C4", lw=.6, zorder=1)
         found = 0
         for sess, cond, rep, lab, col in FIG_DEADLINE_TIMELINE_RUNS:
             m = same[(same.session == sess) & (same.condition == cond) & (same.replicate.astype(str) == str(rep))]
@@ -1537,15 +1636,15 @@ def fig_paper_deadline(df, ecg_details, figdir):
                 print(f"[pooled] fig:deadline (b): no run {sess} {cond} r{rep}")
                 continue
             r = m.iloc[0]
-            axb.plot(*window(r), "-", color=col, lw=.9, label=lab, zorder=3)
+            axb.plot(*window(r), "-", color=col, lw=1.4, label=lab, zorder=3)
             e = ecg_details[(r.session, r.capture_file)]
             for t in e["losses"]:
                 if e["onset"] <= t <= e["wend"]:
                     axb.axvline(t - e["onset"], color=col, lw=.8, ls="--")
             found += 1
         if len(same) > found:
-            axb.plot([], [], "-", color="#c4c4c4", lw=.8, label=f"other runs ($n$ = {len(same) - found})")
-        axb.axhline(1.0, color="#999999", lw=.5, ls=":", zorder=0)
+            axb.plot([], [], "-", color="#C4C4C4", lw=1.0, label=f"other runs ($n$ = {len(same) - found})")
+        axb.axhline(1.0, color="#666666", lw=1.0, ls=":", zorder=0)
         axb.set_xlabel("Time since load onset (s)")
         axb.set_ylabel("Added delay (s)")
         axb.set_ylim(bottom=0)
@@ -1727,9 +1826,9 @@ def fig_paper_time_to_loss(df, figdir, sid):
                 ys = i + (k - (len(devs) - 1) / 2) * 0.3 + np.linspace(-.1, .1, max(len(gg), 1))[:len(gg)]
                 for y, (_, r) in zip(ys, gg.iterrows()):
                     if r.survived:
-                        ax.scatter(r.window_s, y, marker=mk, facecolors="none", edgecolors=col, s=14, lw=.7)
+                        ax.scatter(r.window_s, y, marker=mk, facecolors="none", edgecolors=col, s=22, lw=.8)
                     else:
-                        ax.scatter(r.t_first_loss_after_onset_s, y, marker=mk, color=col, s=14, lw=0)
+                        ax.scatter(r.t_first_loss_after_onset_s, y, marker=mk, color=col, s=22, lw=0, alpha=.75)
             ax.scatter([], [], marker=mk, color=col, s=14, label=f"{dev.replace('_', ' ')}: link loss")
             ax.scatter([], [], marker=mk, facecolors="none", edgecolors=col, s=14, lw=.7,
                        label=f"{dev.replace('_', ' ')}: no loss (end of run)")
