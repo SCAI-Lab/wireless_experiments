@@ -85,8 +85,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-SCRIPT_VERSION = "1.4.1"   # 1.4.1: censoring-aware M(D) (samples acquired in [onset, end-D]); 1.4.0: last ACL fragment
-# previous: SCRIPT_VERSION = "1.3.0"   # 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
+SCRIPT_VERSION = "1.4.2"   # 1.4.2: IEEE figure style at print size, fig_s_per_run, guards in the censored M(D) curve
+# 1.4.1: censoring-aware M(D) (samples acquired in [onset, end-D]); 1.4.0: last ACL fragment
+# 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
 
 # ----------------------------------------------------------------------------
 # constants
@@ -121,41 +122,55 @@ WIFI_NONOVERLAP_MHZ = {1: 2412, 6: 2437, 11: 2462}
 WIFI_HALF_WIDTHS_MHZ = [("OFDM occupied (52 subcarriers)", 8.125), ("nominal 20 MHz", 10.0),
                         ("spectral mask -20 dBr", 11.0)]
 
-# paper figures (pooled output only): IEEE Transactions layout -- 3.5 in single /
-# 7.16 in double column, Times-family text at 8 pt, fonts embedded as TrueType
-# (no Type 3, for PDF eXpress), colours that stay distinct in grayscale print
-IEEE_SINGLE_COL_IN, IEEE_DOUBLE_COL_IN = 3.5, 7.16
-IEEE_RC = {   # SCAI Lab Figure Guide v8, white theme, sized for IEEE columns
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
-    "mathtext.fontset": "custom", "mathtext.rm": "Liberation Sans", "mathtext.it": "Liberation Sans:italic",
-    "font.size": 8, "axes.labelsize": 9, "axes.titlesize": 9, "legend.fontsize": 8,
-    "xtick.labelsize": 8, "ytick.labelsize": 8,
-    "axes.linewidth": .8, "xtick.major.width": .8, "ytick.major.width": .8,
-    "xtick.minor.width": .6, "ytick.minor.width": .6,
+# paper figures: IEEE Transactions graphics guidelines -- drawn at the width they are
+# printed at (ieeecolor.cls: \textwidth 43 pc, \columnwidth 21 pc) so text prints at
+# 8 pt; Times New Roman (Liberation Serif, metric-identical, when it is not installed);
+# fonts embedded as TrueType (no Type 3); series told apart by line style or marker
+# as well as colour, since print editions are converted to grayscale
+IEEE_SINGLE_COL_IN, IEEE_DOUBLE_COL_IN = 21 * 12 / 72.27, 43 * 12 / 72.27
+IEEE_FONT = next((f for f in ["Times New Roman", "Liberation Serif"]
+                  if any(e.name == f for e in matplotlib.font_manager.fontManager.ttflist)), "DejaVu Serif")
+IEEE_RC = {
+    "font.family": "serif",
+    "font.serif": [IEEE_FONT],
+    # math in the same face, so no extra font (e.g. STIX) is embedded
+    "mathtext.fontset": "custom", "mathtext.rm": IEEE_FONT, "mathtext.it": f"{IEEE_FONT}:italic",
+    "mathtext.bf": f"{IEEE_FONT}:bold",
+    "font.size": 8, "axes.labelsize": 8, "axes.titlesize": 8, "legend.fontsize": 8,
+    "legend.title_fontsize": 8, "xtick.labelsize": 8, "ytick.labelsize": 8,
+    "axes.linewidth": .5, "xtick.major.width": .5, "ytick.major.width": .5,
+    "xtick.minor.width": .5, "ytick.minor.width": .5,
     "axes.spines.top": False, "axes.spines.right": False,
-    "axes.edgecolor": "#333333", "axes.labelcolor": "#111111", "text.color": "#111111",
-    "xtick.color": "#111111", "ytick.color": "#111111", "axes.facecolor": "#FAFBFC",
-    "axes.grid": False, "lines.linewidth": 2.0, "lines.solid_capstyle": "round",
-    "legend.frameon": True, "legend.facecolor": "#FAFBFC", "legend.edgecolor": "#D0D0D0",
-    "legend.framealpha": 1.0, "legend.handlelength": 1.8,
-    "pdf.fonttype": 42, "ps.fonttype": 42,
+    "axes.edgecolor": "black", "axes.labelcolor": "black", "text.color": "black",
+    "xtick.color": "black", "ytick.color": "black", "axes.facecolor": "white",
+    "axes.grid": False, "lines.linewidth": 1.0,
+    "legend.frameon": False, "legend.handlelength": 2.2,
+    "savefig.facecolor": "white", "pdf.fonttype": 42, "ps.fonttype": 42,
 }
-TTL_STYLE = [("#1A1A1A", "s"), ("#1478C8", "o")]   # per device (sorted): Corsano, Polar_H10
+TTL_STYLE = [("#000000", "s"), ("#1478C8", "o")]   # per device (sorted): Corsano, Polar_H10
 
 # paper fig:deadline (deadline-miss curves + delay timelines)
+FIG_DEADLINE_SIZE_IN = (0.83 * IEEE_DOUBLE_COL_IN, 1.95)   # main.tex: width=0.83\textwidth
 FIG_DEADLINE_LOAD_PCT = 75.0                      # headroom conditions shown in panel (a)
 FIG_DEADLINE_REFERENCE = "duty0pct"               # no-load reference curve (AFH free, no WiFi)
 FIG_DEADLINE_DEADLINES_MS = [100, 250, 1000, 10000]    # marked on panel (a)
-FIG_DEADLINE_K_COLORS = {0: "#0A4C8A", 2: "#1478C8", 4: "#38A4DC", 8: "#6BAEE8"}   # ordinal, dark = no headroom
+# ordinal: darker and more solid = less headroom
+FIG_DEADLINE_K_COLORS = {0: "#08306B", 2: "#1478C8", 4: "#4A98D8", 8: "#7FB4E6"}
+FIG_DEADLINE_K_STYLES = {0: "-", 2: (0, (5, 1.5)), 4: (0, (3, 1, 1, 1)), 8: (0, (1, 1))}
+FIG_DEADLINE_REF_STYLE = ("#000000", (0, (8, 2)))   # no-load reference
 # panel (b): every run in these conditions (all data ch 12-19, at FIG_DEADLINE_LOAD_PCT) in grey
 FIG_DEADLINE_TIMELINE_CONDITIONS = ["headroom_k0_duty75pct", "forced_channel_duty75pct"]
 # plus two highlighted runs under the same condition (data ch 12-19, 75 % load),
-# one bounded and one runaway: (session, condition, replicate, label, color)
+# one bounded and one runaway: (session, condition, replicate, label, color, linestyle)
 FIG_DEADLINE_TIMELINE_RUNS = [
-    ("20261008_010249_chamber_2", "headroom_k0_duty75pct", 1, "bounded run", "#1A1A1A"),
-    ("20261008_010249_chamber_2", "forced_channel_duty75pct", 1, "runaway run", "#1478C8"),
+    ("20261008_010249_chamber_2", "headroom_k0_duty75pct", 1, "bounded run", "#000000", "-"),
+    ("20261008_010249_chamber_2", "forced_channel_duty75pct", 1, "runaway run", "#1478C8", (0, (4, 1.5))),
 ]
+# supplementary figures: printed widths in supplementary.tex
+FIG_CHANNEL_MAPS_SIZE_IN = (IEEE_DOUBLE_COL_IN, 2.6)       # width=\textwidth (figure*)
+FIG_TTL_WIDTH_IN = IEEE_SINGLE_COL_IN                       # width=\linewidth
+FIG_PER_RUN_SIZE_IN = (IEEE_SINGLE_COL_IN, 2.0)            # width=\linewidth
+FIG_PER_RUN_DEADLINE_MS = 1000                              # fig:s-perrun: share of samples older than this
 
 # paper fig:headroom (Polar M(D) against headroom k; medians over runs, as Table tab:headroom)
 FIG_HEADROOM_DEADLINES_MS = [100, 250, 1000]
@@ -1305,11 +1320,14 @@ def to_latex(dfx, cols, headers, caption, label, path):
 # ----------------------------------------------------------------------------
 # figures
 # ----------------------------------------------------------------------------
-def savefig(fig, figdir, sid, name):
-    """Write <sid>_<name>.pdf (vector; dense point clouds rasterized) and a .png preview."""
+def savefig(fig, figdir, sid, name, exact=False):
+    """Write <sid>_<name>.pdf (vector; dense point clouds rasterized) and a .png preview.
+    exact: keep the page at figsize (paper figures, laid out with constrained layout and
+    included in LaTeX at that same width, so text prints at its nominal size)."""
     p = os.path.join(figdir, f"{sid}_{name}")
-    fig.savefig(p + ".pdf", dpi=300, bbox_inches="tight")
-    fig.savefig(p + ".png", dpi=150, bbox_inches="tight")
+    bbox = None if exact else "tight"
+    fig.savefig(p + ".pdf", dpi=600, bbox_inches=bbox)
+    fig.savefig(p + ".png", dpi=300 if exact else 150, bbox_inches=bbox)
     plt.close(fig)
     return p + ".pdf"
 
@@ -1471,10 +1489,11 @@ def fig_channel_maps(df, figdir, sid):
         return None
     devs = sorted(d.device.unique())
     from matplotlib.colors import LinearSegmentedColormap
-    cmap = LinearSegmentedColormap.from_list("scai", ["#FAFBFC", "#C8DFFA", "#1478C8", "#0A4C8A"])
+    # lightness rises monotonically, so the scale survives grayscale print
+    cmap = LinearSegmentedColormap.from_list("hopset", ["#FFFFFF", "#C8DFFA", "#1478C8", "#08306B"])
     with plt.rc_context(IEEE_RC):
-        fig, axes = plt.subplots(1, len(devs), figsize=(IEEE_DOUBLE_COL_IN, 2.9), squeeze=False,
-                                 gridspec_kw=dict(wspace=0.75))
+        fig, axes = plt.subplots(1, len(devs), figsize=FIG_CHANNEL_MAPS_SIZE_IN, squeeze=False,
+                                 layout="constrained")
         for ax, dev in zip(axes[0], devs):
             g = d[d.device == dev].sort_values(["family", "headroom_k", "nominal_load_pct"])
             conds = list(dict.fromkeys(g.condition))
@@ -1487,17 +1506,17 @@ def fig_channel_maps(df, figdir, sid):
                 M[i] /= max(1, len(maps))
             im = ax.imshow(M, aspect="auto", cmap=cmap, vmin=0, vmax=1, interpolation="nearest")
             ax.set_yticks(range(len(conds)))
-            ax.set_yticklabels([nice_cond(c) for c in conds], fontsize=7)
+            ax.set_yticklabels([nice_cond(c) for c in conds])
             for x in (11.5, 19.5):
-                ax.axvline(x, color="#111111", lw=.8, ls="--")
-            ax.set_xlabel("BLE data channel")
-            ax.set_title(dev.replace("_", " "), fontsize=9, fontweight="bold")
+                ax.axvline(x, color="black", lw=.8, ls="--")
+            ax.set_xlabel("BLE data channel index")
+            ax.set_title(dev.replace("_", " "))
             for sp in ax.spines.values():
                 sp.set_visible(False)
         cb = fig.colorbar(im, ax=list(axes[0]), fraction=.025, pad=.02)
         cb.set_label("Fraction of time in hop set")
         cb.outline.set_visible(False)
-        return savefig(fig, figdir, sid, "channel_maps")
+        return savefig(fig, figdir, sid, "channel_maps", exact=True)
 
 
 def fig_polar_timelines(df, ecg_details, figdir, sid):
@@ -1559,15 +1578,19 @@ def miss_curve(e, Ds):
 
 def miss_curve_age_cens(e, Ds):
     """Censoring-aware M(D) on sample age (framing included): only samples acquired in
-    [onset, wend - D] count; undelivered ones are misses."""
+    [onset, wend - D] count; undelivered ones are misses. NaN where that interval is
+    1 s or shorter (as run_metrics, which leaves miss_age_cens_* empty there)."""
     nn = e["n"].astype(int)
     rep = np.repeat(np.arange(len(nn)), nn)
-    jj = np.concatenate([np.arange(k) for k in nn])
+    jj = np.concatenate([np.arange(k) for k in nn]) if len(nn) else np.zeros(0, int)
     age = e["delay_ms"][rep] / 1000 + (nn[rep] - 1 - jj) / ECG_FS
     ta = e["t"][rep] - age
     out = []
     for D in Ds:
         hi = e["wend"] - D / 1000
+        if hi - e["onset"] <= 1:
+            out.append(np.nan)
+            continue
         exp_c = ECG_FS * (hi - e["onset"])
         sel = (ta >= e["onset"]) & (ta <= hi)
         out.append(100 * max(0, 1 - np.count_nonzero(sel & (age <= D / 1000)) / exp_c))
@@ -1591,31 +1614,33 @@ def fig_paper_deadline(df, ecg_details, figdir):
     if hr.empty:
         return None
     with plt.rc_context(IEEE_RC):
-        Ds = np.logspace(1.5, 4.5, 80)
-        fig, (axa, axb) = plt.subplots(1, 2, figsize=(IEEE_DOUBLE_COL_IN, 2.25))
-        series = [(f"$k$ = {int(k)}", g, FIG_DEADLINE_K_COLORS.get(int(k), "#256abf"), "-")
-                  for k, g in hr.groupby("headroom_k")]
+        fig, (axa, axb) = plt.subplots(1, 2, figsize=FIG_DEADLINE_SIZE_IN, layout="constrained")
+        series = [(f"$k$ = {int(k)}", g, FIG_DEADLINE_K_COLORS.get(int(k), "#256abf"),
+                   FIG_DEADLINE_K_STYLES.get(int(k), "-")) for k, g in hr.groupby("headroom_k")]
         if not ref.empty:
-            series.append(("no load", ref, "#1A1A1A", "--"))
+            series.append(("no load", ref, *FIG_DEADLINE_REF_STYLE))
         Ds = np.logspace(0.5, 4.25, 90)
         for lab, g, col, ls in series:
             curves = np.array([miss_curve_age_cens(ecg_details[(r.session, r.capture_file)], Ds) for r in g.itertuples()])
             if len(curves) >= 10:
                 for c_ in curves:
-                    axa.plot(Ds, c_, "-", color=col, lw=0.6, alpha=0.35, zorder=1)
-            axa.plot(Ds, np.median(curves, axis=0), ls, color=col, lw=1.8,
+                    axa.plot(Ds, c_, "-", color=col, lw=0.5, alpha=0.35, zorder=1)
+            axa.plot(Ds, np.nanmedian(curves, axis=0), ls=ls, color=col, lw=1.5,
                      label=f"{lab} ({len(curves)})")
-        axa.axhline(1.0, color="#666666", lw=1.0, zorder=0)
+        axa.axhline(1.0, color="#666666", lw=.5, zorder=0)
         for D in FIG_DEADLINE_DEADLINES_MS:
-            axa.axvline(D, color="#666666", lw=1.0, ls=":", zorder=0)
+            axa.axvline(D, color="#666666", lw=.5, ls=":", zorder=0)
             axa.text(D, 101.5, f"{D / 1000:g} s" if D >= 1000 else f"{D} ms",
-                     ha={100: "right", 250: "left"}.get(D, "center"), va="bottom")
+                     ha={100: "right"}.get(D, "center"), va="bottom")
         axa.set_xscale("log")
         axa.set_xlim(Ds[0], Ds[-1])
         axa.set_ylim(0, 100)
         axa.set_xlabel("Deadline $D$ (ms)")
-        axa.set_ylabel("Samples older than $D$, $M(D)$ (%)")
-        axa.legend(loc="lower left", handlelength=1.0, handletextpad=0.4, borderpad=0.3, borderaxespad=0.2, title="(runs)", fontsize=7.5, title_fontsize=7.5)
+        axa.set_ylabel("Samples older than $D$ (%)")
+        # legends on a white ground (no frame line) so the curves behind them don't cut the text
+        leg = dict(frameon=True, facecolor="white", edgecolor="none", framealpha=1.0, borderpad=0.2,
+                   borderaxespad=0.2, labelspacing=0.25, handletextpad=0.4)
+        axa.legend(loc="lower left", handlelength=2.6, title="(runs)", **leg)
 
         def window(r):
             e = ecg_details[(r.session, r.capture_file)]
@@ -1625,37 +1650,35 @@ def fig_paper_deadline(df, ecg_details, figdir):
         # every run of the same condition (data ch 12-19 at FIG_DEADLINE_LOAD_PCT) in grey,
         # the FIG_DEADLINE_TIMELINE_RUNS pair highlighted on top
         same = pol[pol.condition.isin(FIG_DEADLINE_TIMELINE_CONDITIONS) & (pol.nominal_load_pct == FIG_DEADLINE_LOAD_PCT)]
-        hl = {(s_, c_, str(r_)) for s_, c_, r_, _, _ in FIG_DEADLINE_TIMELINE_RUNS}
+        hl = {(s_, c_, str(r_)) for s_, c_, r_, _, _, _ in FIG_DEADLINE_TIMELINE_RUNS}
         for r in same.itertuples():
             if (r.session, r.condition, str(r.replicate)) not in hl:
-                axb.plot(*window(r), "-", color="#C4C4C4", lw=.6, zorder=1)
+                axb.plot(*window(r), "-", color="#BDBDBD", lw=.5, zorder=1)
         found = 0
-        for sess, cond, rep, lab, col in FIG_DEADLINE_TIMELINE_RUNS:
+        for sess, cond, rep, lab, col, ls in FIG_DEADLINE_TIMELINE_RUNS:
             m = same[(same.session == sess) & (same.condition == cond) & (same.replicate.astype(str) == str(rep))]
             if m.empty:
                 print(f"[pooled] fig:deadline (b): no run {sess} {cond} r{rep}")
                 continue
             r = m.iloc[0]
-            axb.plot(*window(r), "-", color=col, lw=1.4, label=lab, zorder=3)
+            axb.plot(*window(r), ls=ls, color=col, lw=1.2, label=lab, zorder=3)
             e = ecg_details[(r.session, r.capture_file)]
             for t in e["losses"]:
                 if e["onset"] <= t <= e["wend"]:
                     axb.axvline(t - e["onset"], color=col, lw=.8, ls="--")
             found += 1
         if len(same) > found:
-            axb.plot([], [], "-", color="#C4C4C4", lw=1.0, label=f"other runs ($n$ = {len(same) - found})")
-        axb.axhline(1.0, color="#666666", lw=1.0, ls=":", zorder=0)
+            axb.plot([], [], "-", color="#BDBDBD", lw=1.0, label=f"other runs ($n$ = {len(same) - found})")
+        axb.axhline(1.0, color="#666666", lw=.5, ls=":", zorder=0)
         axb.set_xlabel("Time since load onset (s)")
         axb.set_ylabel("Added delay (s)")
         axb.set_ylim(bottom=0)
-        axb.legend(loc="upper left")
-        # subfigure labels centred below each panel, under its axis label
-        fig.tight_layout(w_pad=2.0)
-        fig.align_xlabels([axa, axb])
+        axb.legend(loc="upper left", **leg).set_zorder(5)
+        # IEEE: subfigure labels centred below each panel (8 pt Times), under its axis label
         for ax, lab in ((axa, "(a)"), (axb, "(b)")):
-            ax.annotate(lab, xy=(.5, 0), xycoords=ax.xaxis.label, xytext=(0, -4),
-                        textcoords="offset points", ha="center", va="top")
-        return savefig(fig, figdir, "pooled", "fig_deadline")
+            ax.set_xlabel(f"{ax.get_xlabel()}\n{lab}", linespacing=1.6)
+        fig.align_xlabels([axa, axb])
+        return savefig(fig, figdir, "pooled", "fig_deadline", exact=True)
 
 
 def polar_headroom_runs(df):
@@ -1817,7 +1840,7 @@ def fig_paper_time_to_loss(df, figdir, sid):
     labels = [cond_label(d[d.condition == c].iloc[0]) for c in conds]
     devs = sorted(d.device.unique())
     with plt.rc_context(IEEE_RC):
-        fig, ax = plt.subplots(figsize=(IEEE_SINGLE_COL_IN, 0.22 * len(conds) + 0.9))
+        fig, ax = plt.subplots(figsize=(FIG_TTL_WIDTH_IN, 0.16 * len(conds) + 0.9), layout="constrained")
         for k, dev in enumerate(devs):
             col, mk = TTL_STYLE[k % len(TTL_STYLE)]
             g = d[d.device == dev]
@@ -1838,9 +1861,62 @@ def fig_paper_time_to_loss(df, figdir, sid):
         ax.set_xlim(left=0)
         ax.set_xlabel("Time to first link loss after load onset (s)")
         ax.grid(axis="y", alpha=0)
-        ax.legend(loc="lower center", bbox_to_anchor=(.42, 1.0), ncol=2, columnspacing=.8)
-        fig.tight_layout()
-        return savefig(fig, figdir, sid, "time_to_link_loss")
+        ax.legend(loc="lower center", bbox_to_anchor=(.42, 1.0), ncol=2, columnspacing=.8, handletextpad=.3)
+        return savefig(fig, figdir, sid, "time_to_link_loss", exact=True)
+
+
+def fig_paper_per_run(df, figdir):
+    """Supplementary fig:s-perrun, IEEE column width: share of samples older than
+    FIG_PER_RUN_DEADLINE_MS (censoring-aware, age from acquisition) in every chamber Polar
+    run, grouped by channel set and load; marker per session, runaways filled. Values
+    below FIG_M_FLOOR_PCT / 5 are drawn at that floor. Plotted runs: pooled_fig_s_per_run.csv."""
+    c = f"miss_age_cens_{FIG_PER_RUN_DEADLINE_MS}ms_pct"
+    pol = df[~df.exclude & df.device.str.contains("olar") &
+             df.family.isin(["free", "free_bracket", "free_long", "constrained", "headroom"])].copy()
+    if pol.empty or c not in pol:
+        return None
+    k = pol.headroom_k.astype(float).where(pol.family == "headroom",
+                                           np.where(pol.family == "constrained", 0.0, np.nan))
+    load = pol.nominal_load_pct.astype(float)
+    pol["group"] = [("free, 0" if l == 0 else "free, 25–100") if np.isnan(kk) else f"$k$={kk:.0f}, {l:.0f}"
+                    for kk, l in zip(k, load)]
+    # AFH free, then k = 0, 2, 4, 8 at increasing load, the 100 % headroom runs (session 2) last
+    pol["_key"] = [(not np.isnan(kk), (not np.isnan(kk)) and kk > 0 and l == 100, -1 if np.isnan(kk) else kk,
+                    min(l, 25) if np.isnan(kk) else l) for kk, l in zip(k, load)]
+    order = list(dict.fromkeys(pol.sort_values("_key").group))
+    floor = FIG_M_FLOOR_PCT / 5
+    sessions = sorted(pol.session.unique())
+    markers = ["o", "s", "^", "D"]
+    with plt.rc_context(IEEE_RC):
+        fig, ax = plt.subplots(figsize=FIG_PER_RUN_SIZE_IN, layout="constrained")
+        for i, g in enumerate(order):
+            gg = pol[pol.group == g]
+            xs = i + (np.linspace(-.25, .25, len(gg)) if len(gg) > 1 else np.zeros(1))
+            for x, r in zip(xs, gg.itertuples()):
+                mk = markers[sessions.index(r.session) % len(markers)]
+                v = max(getattr(r, c), floor)
+                if bool(r.runaway):
+                    ax.scatter(x, v, marker=mk, s=16, color="#1478C8", edgecolors="black", lw=.5, zorder=3)
+                else:
+                    ax.scatter(x, v, marker=mk, s=12, facecolors="none", edgecolors="black", lw=.6, zorder=2)
+        ax.axhline(1.0, color="black", lw=.5, ls=":", zorder=0)
+        ax.set_yscale("log")
+        ax.set_ylim(floor * .7, 150)
+        ax.set_yticks([floor, .1, 1, 10, 100])
+        ax.set_yticklabels([f"≤{floor:g}", "0.1", "1", "10", "100"])
+        ax.set_xticks(range(len(order)))
+        ax.set_xticklabels(order, rotation=55, ha="right", rotation_mode="anchor")
+        ax.set_xlim(-.6, len(order) - .4)
+        ax.set_ylabel(f"Samples older than {FIG_PER_RUN_DEADLINE_MS / 1000:g} s (%)")
+        ax.set_xlabel("Channel set, Wi-Fi load (%)")
+        for j, s in enumerate(sessions):
+            ax.scatter([], [], marker=markers[j % len(markers)], s=12, facecolors="none", edgecolors="black",
+                       lw=.6, label=f"session {j + 1}")
+        ax.scatter([], [], marker="o", s=16, color="#1478C8", edgecolors="black", lw=.5, label="runaway")
+        ax.legend(loc="upper right", handletextpad=.2, borderaxespad=.2, labelspacing=.25)
+        pol[["session", "condition", "replicate", "group", c, "runaway"]].to_csv(
+            os.path.join(figdir, "pooled_fig_s_per_run.csv"), index=False)
+        return savefig(fig, figdir, "pooled", "fig_s_per_run", exact=True)
 
 
 # ----------------------------------------------------------------------------
@@ -2111,6 +2187,7 @@ def pooled(dfs, out_root, ecg_details=None):
     fig_paper_time_to_loss(df, os.path.join(out, "figures"), sid)
     fig_paper_headroom(df, os.path.join(out, "figures"))
     fig_paper_gym_chamber(df, os.path.join(out, "figures"))
+    fig_paper_per_run(df, os.path.join(out, "figures"))
     if ecg_details:
         fig_paper_deadline(df, ecg_details, os.path.join(out, "figures"))
     rw, fr, ch = pooled_runaway(df), pooled_framing(df), channel_arithmetic()
