@@ -85,7 +85,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-SCRIPT_VERSION = "1.4.2"   # 1.4.2: IEEE figure style at print size, fig_s_per_run, guards in the censored M(D) curve
+SCRIPT_VERSION = "1.4.3"   # 1.4.3: (a)/(b) subfigure labels on the channel maps (IEEE multipart rule)
+# 1.4.2: IEEE figure style at print size, fig_s_per_run, guards in the censored M(D) curve
 # 1.4.1: censoring-aware M(D) (samples acquired in [onset, end-D]); 1.4.0: last ACL fragment
 # 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
 
@@ -1494,7 +1495,7 @@ def fig_channel_maps(df, figdir, sid):
     with plt.rc_context(IEEE_RC):
         fig, axes = plt.subplots(1, len(devs), figsize=FIG_CHANNEL_MAPS_SIZE_IN, squeeze=False,
                                  layout="constrained")
-        for ax, dev in zip(axes[0], devs):
+        for j, (ax, dev) in enumerate(zip(axes[0], devs)):
             g = d[d.device == dev].sort_values(["family", "headroom_k", "nominal_load_pct"])
             conds = list(dict.fromkeys(g.condition))
             M = np.zeros((len(conds), 37))
@@ -1509,7 +1510,8 @@ def fig_channel_maps(df, figdir, sid):
             ax.set_yticklabels([nice_cond(c) for c in conds])
             for x in (11.5, 19.5):
                 ax.axvline(x, color="black", lw=.8, ls="--")
-            ax.set_xlabel("BLE data channel index")
+            # IEEE: subfigure labels centred below each panel, under its axis label
+            ax.set_xlabel(f"BLE data channel index\n({'abcdefgh'[j]})", linespacing=1.6)
             ax.set_title(dev.replace("_", " "))
             for sp in ax.spines.values():
                 sp.set_visible(False)
@@ -1633,6 +1635,8 @@ def fig_paper_deadline(df, ecg_details, figdir):
             axa.text(D, 101.5, f"{D / 1000:g} s" if D >= 1000 else f"{D} ms",
                      ha={100: "right"}.get(D, "center"), va="bottom")
         axa.set_xscale("log")
+        # plain numbers: superscript exponents (10^n) would print below the 8 pt minimum
+        axa.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:.0f}"))
         axa.set_xlim(Ds[0], Ds[-1])
         axa.set_ylim(0, 100)
         axa.set_xlabel("Deadline $D$ (ms)")

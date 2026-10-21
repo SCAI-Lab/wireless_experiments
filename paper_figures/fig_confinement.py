@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Paper Fig. (confinement schematic): BLE data channels used in each chamber channel set.
 
-Drawn at the width main.tex prints it at (0.9\\columnwidth), in the IEEE style of
+Drawn at the width main.tex prints it at (\\columnwidth; IEEE: not narrower than a column), in the IEEE style of
 analyze_session.py (IEEE_RC), so text prints at 8 pt.
 
 Usage: python3 paper_figures/fig_confinement.py [out_dir]   (default: current directory)
@@ -17,7 +17,7 @@ from matplotlib.patches import Polygon, Rectangle  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from analyze_session import IEEE_RC, IEEE_SINGLE_COL_IN  # noqa: E402
 
-SIZE_IN = (0.9 * IEEE_SINGLE_COL_IN, 1.8)
+SIZE_IN = (IEEE_SINGLE_COL_IN, 1.8)
 BUSY, CLEAN, BAND = "#08306B", "#7FB4E6", "#E5F0FC"   # dark / light / fill: distinct in grayscale
 NOTE = "#555555"
 
@@ -70,7 +70,7 @@ with plt.rc_context(IEEE_RC):
          Rectangle((0, 0), 1, 1, fc="white", ec="#BDBDBD"), Rectangle((0, 0), 1, 1, fc="white", ec=BUSY, hatch="////")]
     ax.legend(h, ["used, in band", "used, clean", "not used", "removed under load"],
               loc="upper center", bbox_to_anchor=(0.45, -0.36), ncol=2, handlelength=1.2, columnspacing=1.0)
-    fig.subplots_adjust(left=0.19, right=0.86, top=0.9, bottom=0.4)
+    fig.subplots_adjust(left=0.17, right=0.87, top=0.9, bottom=0.4)
     out = sys.argv[1] if len(sys.argv) > 1 else "."
     fig.savefig(os.path.join(out, "fig_confinement.pdf"))
     fig.savefig(os.path.join(out, "fig_confinement.png"), dpi=300)
