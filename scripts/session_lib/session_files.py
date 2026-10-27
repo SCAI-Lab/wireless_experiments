@@ -10,6 +10,9 @@ import yaml
 
 from .logs import log
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = SCRIPTS_DIR.parent
+
 
 # =============================================================================
 # Config loading
@@ -20,7 +23,12 @@ def load_config(path="config.yaml"):
     """config.yaml, with ${VAR} and ~ expanded in each device's
     driver_source_dir (it points into the ROS workspace the drivers are
     built in: export ROS_WS=<that workspace>). Left unexpanded if the
-    variable isn't set -- driver_version then just reads blank."""
+    variable isn't set -- driver_version then just reads blank.
+    A relative path not found in the working directory is looked up next
+    to the scripts (scripts/config.yaml)."""
+    path = Path(path)
+    if not path.is_absolute() and not path.exists():
+        path = SCRIPTS_DIR / path
     with open(path) as f:
         cfg = yaml.safe_load(f)
     for d in cfg.get("devices") or []:
@@ -31,8 +39,10 @@ def load_config(path="config.yaml"):
 
 def get_output_dir(cfg):
     """The base directory under which every session gets its own timestamped
-    subdirectory (see get_session_dir)."""
-    d = Path(cfg["session"]["output_dir"])
+    subdirectory (see get_session_dir). A relative output_dir is relative
+    to the repo root (captures/), whatever the working directory; it is
+    returned relative to the working directory so logged paths stay short."""
+    d = Path(os.path.relpath(REPO_ROOT / cfg["session"]["output_dir"]))
     d.mkdir(parents=True, exist_ok=True)
     return d
 

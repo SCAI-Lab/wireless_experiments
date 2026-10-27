@@ -34,18 +34,18 @@ Normally started by `gym_session.py run`, which runs the survey, starts
 this monitor as a child process (`run --quiet`), runs the sensors and stops
 the monitor at the end. On its own (e.g. in a second terminal):
 
-    python3 background_monitor.py survey      # new captures/gym_<date>_<time>/; picks the busiest channel
-    python3 background_monitor.py run         # until Ctrl+C
-    python3 background_monitor.py people 14
+    python3 scripts/background_monitor.py survey      # new captures/gym_<date>_<time>/; picks the busiest channel
+    python3 scripts/background_monitor.py run         # until Ctrl+C
+    python3 scripts/background_monitor.py people 14
 
 Without --session, every command uses the most recent gym_ session.
 
 Chamber airtime check (same tool, same metric, chamber_session.py untouched):
 
-    python3 background_monitor.py run --session <chamber TS> --channel 6
+    python3 scripts/background_monitor.py run --session <chamber TS> --channel 6
 
 Other:
-    python3 background_monitor.py check               # 10 s airtime + 10 s BLE count, prints only
+    python3 scripts/background_monitor.py check               # 10 s airtime + 10 s BLE count, prints only
 
 Needs: sudo once at start (monitor-mode switch + dumpcap); iw already has
 cap_net_admin for channel changes; the user in `dialout` for the sniffer.

@@ -12,7 +12,7 @@ request (ATT Write Command 0x44 <file> <len> <offset>), because under load data 
 arriving after the driver has moved on to the next command. A lower bound for the
 consumer: it ignores driver/ROS processing after the host receives the bytes.
 
-Usage: python3 corsano_data_age.py CAPTURE_DIR PER_RUN_CSV OUT_CSV
+Usage: python3 scripts/corsano_data_age.py CAPTURE_DIR PER_RUN_CSV OUT_CSV
 """
 import os, sys, numpy as np, pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

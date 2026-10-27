@@ -5,6 +5,18 @@ run in an anechoic chamber (`chamber_session.py`) and, separately, in a real
 rehab gym (`gym_session.py`). Both scripts share one `config.yaml` and the
 `session_lib/` package.
 
+## Repository layout
+
+| Folder | Contents |
+|---|---|
+| `scripts/` | All code: the session scripts, `analyze_session.py`, `background_monitor.py`, `privacy_scrub.py` and the other tools, `config.yaml`, the `session_lib/` package and `paper_figures/`. |
+| `captures/` | Raw session data, one folder per session (btsnoop, rosbags, driver logs, AFH maps, background monitor). Not in git. |
+| `analysis/` | `analyze_session.py` output, one folder per session plus pooled analyses. Git tracks the paper's sessions: `20261007_105222_chamber_1`, `20261008_010249_chamber_2`, the three `gym_SPZ_*` sessions and their pooled analyses. |
+
+Run everything from the repository root, e.g. `python3 scripts/gym_session.py run`.
+Paths work from any directory: `config.yaml` is found next to the scripts,
+sessions go to `<repo>/captures/` and analyses to `<repo>/analysis/`.
+
 *Updated 2026-10-06. Replaces `wireless_tests_guide.docx` (last updated
 2026-09-25).*
 
@@ -273,14 +285,14 @@ widest range in which to measure recovery as clean channels are added.
 
 | Command | Effect |
 |---|---|
-| `python3 chamber_session.py run` | Rows 1–5 and 8, both devices (default `--row all`). |
+| `python3 scripts/chamber_session.py run` | Rows 1–5 and 8, both devices (default `--row all`). |
 | `… run --row 3` | Only row 3. `--row` accepts 1–5, 8 or `all`. |
 | `… run --device Polar_H10` | Only one device. |
 | `… run --row 3 --condition forced_channel_max_load` | Only that condition (rows 3, 5, 8; repeatable). |
 | `… run --resume [SESSION]` | Resume the latest (or a given) session, skipping runs already recorded. |
 | `… run --resume --rerun-failed` | Also re-attempt every run whose **latest** attempt FAILED. |
 | `… run --test-mode` | Lab dry run: the throughput baseline check only warns, and the internal WiFi stays on. Everything else is enforced. |
-| `python3 chamber_session.py parse [--session SESSION]` | Re-parse captures into `results.csv` without re-running. |
+| `python3 scripts/chamber_session.py parse [--session SESSION]` | Re-parse captures into `results.csv` without re-running. |
 
 **Data is never overwritten** (since 2026-10-06). Before a run writes
 anything, existing files at its names are moved aside:
@@ -303,18 +315,18 @@ run was retried. `results.csv` still keeps every attempt.
 
 | Command | Effect |
 |---|---|
-| `python3 gym_session.py run` | Everything, in a new `captures/gym_<date>_<time>/`: survey → background monitor (child process) → sensor runs → parse. |
+| `python3 scripts/gym_session.py run` | Everything, in a new `captures/gym_<date>_<time>/`: survey → background monitor (child process) → sensor runs → parse. |
 | `… run --resume` | Continue the latest `gym_` session (done parts/runs are skipped). `--session NAME` for a specific one. |
 | `… run --resume --rerun-failed` | Also re-attempt FAILED runs (captures moved aside first). |
 | `… run --only survey` / `--only monitor` / `--only sensors` | Just that part; repeat to combine (e.g. `--only monitor --only sensors`). Monitor-only runs until Ctrl+C. |
 | `… run --wifi-channel N` | Force channel N instead of the survey's busiest. |
-| `python3 gym_session.py people N` | Log a people count any time. The run doesn't ask for counts unless `people_count_prompts: true` in config.yaml. |
-| `python3 gym_session.py masks` | Show the session's forced-channel masks (no hardware). |
-| `python3 gym_session.py parse` | `results.csv` + `results_with_background.csv`. |
-| `python3 gym_session.py covariates --session <any TS>` | Only the background join (works on a chamber session with `background/` too). |
+| `python3 scripts/gym_session.py people N` | Log a people count any time. The run doesn't ask for counts unless `people_count_prompts: true` in config.yaml. |
+| `python3 scripts/gym_session.py masks` | Show the session's forced-channel masks (no hardware). |
+| `python3 scripts/gym_session.py parse` | `results.csv` + `results_with_background.csv`. |
+| `python3 scripts/gym_session.py covariates --session <any TS>` | Only the background join (works on a chamber session with `background/` too). |
 
 `background_monitor.py` can also be run on its own (`check`, `survey`,
-`run`, `people`); `python3 background_monitor.py check` is the 10 s hardware
+`run`, `people`); `python3 scripts/background_monitor.py check` is the 10 s hardware
 self-test.
 
 **Requirements:** sudo access for btmon, the ROS 2 environment sourced, and
@@ -470,9 +482,9 @@ and 1 quiet day. Use the same stand, height and distance as the chamber.
 **Order of the day:**
 
 ```
-python3 background_monitor.py check     # once: adapter + sniffer work (prints only)
-python3 gym_session.py run              # survey (~7 min) + monitor + 24 runs (~2.5 h)
-python3 gym_session.py run --resume     # after any interruption
+python3 scripts/background_monitor.py check     # once: adapter + sniffer work (prints only)
+python3 scripts/gym_session.py run              # survey (~7 min) + monitor + 24 runs (~2.5 h)
+python3 scripts/gym_session.py run --resume     # after any interruption
 ```
 
 It asks for the sudo password once (monitor mode). People counts are logged
@@ -558,13 +570,13 @@ check, or run it as a separate short block.
     lists in driver logs become a count. The drivers themselves are not
     changed.
   - Older sessions recorded outside the chamber (lab, dry runs) contain
-    colleagues' devices too: `python3 privacy_scrub.py captures/<session>`.
+    colleagues' devices too: `python3 scripts/privacy_scrub.py captures/<session>`.
 
 ## 12. Other tools
 
 | Tool | Purpose |
 |---|---|
-| `log_environment.py` | Writes the same software/firmware snapshot as a session start, without running anything: `python3 log_environment.py [OUT_DIR]`. |
+| `log_environment.py` | Writes the same software/firmware snapshot as a session start, without running anything: `python3 scripts/log_environment.py [OUT_DIR]`. |
 | `reconnect_regression.py` | Tests reconnects outside the chamber, with no WiFi load. It forces link drops (`--drop block`, the default, via `bluetoothctl block`) and measures how long until the link and the **data** come back. Avoid `--drop rfkill` on this laptop: the AX211 hung once and needed a reboot. |
 | `analyze_session.py` | Analyzes one or more session folders (or .zip exports): a `report.md` with sanity checks and headline numbers, per-run and per-condition tables, and provenance in `meta.json`. |
-| `gym_sim/` | BLE link simulation (link model, emulated devices, scenarios). `validate_held_out.py` fits the load model on some forced-channel conditions and checks its predictions on the rest. |
+| `paper_figures/` | Paper-only figures and tables: `fig_confinement.py` (channel confinement diagram) and `tab_s_gym_runs.py` (supplementary per-run gym table). |

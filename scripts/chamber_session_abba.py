@@ -37,13 +37,13 @@ holding that session's log, btsnoop captures, manifest.csv, and
 results.csv together as a self-contained unit.
 
 Usage:
-    python3 chamber_session.py run                # run rows 1-5 and 8 back-to-back (default)
-    python3 chamber_session.py run --row 1        # run only Row 1
-    python3 chamber_session.py parse              # re-parse the most recent session
-    python3 chamber_session.py parse --session 20260918_121724  # re-parse a specific one
-    python3 chamber_session.py run --resume       # resume the most recent interrupted session
-    python3 chamber_session.py run --resume 20260918_121724  # resume a specific one
-    python3 chamber_session.py run --test-mode    # dry run outside the chamber (see below)
+    python3 scripts/chamber_session.py run                # run rows 1-5 and 8 back-to-back (default)
+    python3 scripts/chamber_session.py run --row 1        # run only Row 1
+    python3 scripts/chamber_session.py parse              # re-parse the most recent session
+    python3 scripts/chamber_session.py parse --session 20260918_121724  # re-parse a specific one
+    python3 scripts/chamber_session.py run --resume       # resume the most recent interrupted session
+    python3 scripts/chamber_session.py run --resume 20260918_121724  # resume a specific one
+    python3 scripts/chamber_session.py run --test-mode    # dry run outside the chamber (see below)
 
 --resume re-uses the session's own directory and skips any (row, device,
 condition, replicate) combo already recorded as a real PASSED (BLE link
@@ -370,9 +370,8 @@ def _forced_channel_duty_pct(condition):
     """Map a row3 condition name to its duty percentage. Covers the
     original binary no_load/max_load names plus dose-response conditions
     named forced_channel_duty<NN>pct (e.g. forced_channel_duty25pct),
-    added 2026-09-23 so the held-out validation in gym_sim/ has real
-    intermediate-load data to predict against instead of just the two
-    endpoints."""
+    added 2026-09-23 to have intermediate-load data instead of just the
+    two endpoints."""
     if condition in _FORCED_CHANNEL_DUTY_BY_CONDITION:
         return _FORCED_CHANNEL_DUTY_BY_CONDITION[condition]
     m = re.fullmatch(r"forced_channel_duty(\d+)pct", condition)

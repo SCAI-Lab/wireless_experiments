@@ -361,10 +361,7 @@ row2_duty_cycle:
 #
 # Dose-response levels (duty25/50/75pct) added 2026-09-23: the only real
 # data on disk before this was the two endpoints (0%/100%, session
-# 20260923_112431) -- not enough for the manuscript's held-out validation
-# (fit on a subset, predict the rest). These three intermediate conditions
-# are what gym_sim/validate_held_out.py needs to actually compare
-# predicted vs. measured at 50/75% once this row is re-run. Named
+# 20260923_112431) -- not enough to see the response between them. Named
 # forced_channel_duty<NN>pct (parsed by _forced_channel_duty_pct in
 # chamber_session.py) to match Row 2's dutyNNpct convention.
 #

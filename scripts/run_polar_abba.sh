@@ -19,8 +19,8 @@
 # (--no-bracket) since step 7 already is the end check.
 #
 # Usage:
-#   ./run_polar_abba.sh [extra args, e.g. --test-mode]
-#   ./run_polar_abba.sh --session 20261008_101500 [extra args]
+#   scripts/run_polar_abba.sh [extra args, e.g. --test-mode]
+#   scripts/run_polar_abba.sh --session 20261008_101500 [extra args]
 #       resume after an abort: steps already in the manifest are skipped
 #       (PASSED or FAILED -- rows 3/5/8 don't retry), so just re-run it.
 
@@ -42,7 +42,7 @@ step() {
     echo "=================== step $n/7: $* ==================="
     if [[ -z "$SESSION" ]]; then
         python3 chamber_session_abba.py run "${COMMON[@]}" "$@" "${EXTRA[@]}"
-        SESSION=$(ls captures | grep -E '^[0-9]{8}_[0-9]{6}$' | sort | tail -1)
+        SESSION=$(ls ../captures | grep -E '^[0-9]{8}_[0-9]{6}$' | sort | tail -1)
         echo ">>> session: $SESSION"
     else
         python3 chamber_session_abba.py run --resume "$SESSION" \

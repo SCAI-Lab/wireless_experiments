@@ -26,8 +26,8 @@ foreign address is replaced by <other device>.
 Idempotent: an already-clean file is left as it is.
 
 Usage:
-    python3 privacy_scrub.py captures/gym_20261012_165947 [more dirs...]
-    python3 privacy_scrub.py --dry-run captures/...      # report only
+    python3 scripts/privacy_scrub.py captures/gym_20261012_165947 [more dirs...]
+    python3 scripts/privacy_scrub.py --dry-run captures/...      # report only
 
 gym_session.py runs this after every run automatically.
 """

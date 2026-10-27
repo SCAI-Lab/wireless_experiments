@@ -3,7 +3,7 @@
 over SSH) without starting a session. Sessions do this automatically at
 start -- see session_lib/environment.py.
 
-    python3 log_environment.py [OUT_DIR] [--config config.yaml]
+    python3 scripts/log_environment.py [OUT_DIR] [--config config.yaml]
 """
 
 import argparse

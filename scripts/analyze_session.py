@@ -58,7 +58,7 @@ Metric definitions (match the paper's Methods):
   - p_hat (Polar only): (n_0x3E / n_connection_attempts) ** (1/6).
 
 Usage:
-  python3 analyze_session.py SESSION [SESSION ...] [--out analysis] [--pool]
+  python3 scripts/analyze_session.py SESSION [SESSION ...] [--out analysis] [--pool]
   SESSION = session directory (contains manifest.csv) or a .zip export.
 """
 
@@ -89,6 +89,7 @@ SCRIPT_VERSION = "1.4.3"   # 1.4.3: (a)/(b) subfigure labels on the channel maps
 # 1.4.2: IEEE figure style at print size, fig_s_per_run, guards in the censored M(D) curve
 # 1.4.1: censoring-aware M(D) (samples acquired in [onset, end-D]); 1.4.0: last ACL fragment
 # 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # scripts/..
 
 # ----------------------------------------------------------------------------
 # constants
@@ -2010,7 +2011,7 @@ def analyze(sdir, input_path, out_root):
                         fig_polar_timelines(df, ecg_details, fdir, sid), fig_requests(df, fdir, sid)] if f]
 
     # --- provenance ---
-    meta = dict(session_id=sid, input=os.path.relpath(os.path.abspath(input_path), os.path.dirname(os.path.abspath(__file__))), script_version=SCRIPT_VERSION,
+    meta = dict(session_id=sid, input=os.path.relpath(os.path.abspath(input_path), REPO_ROOT), script_version=SCRIPT_VERSION,
                 analyzed_at=dt.datetime.now().isoformat(timespec="seconds"),
                 n_manifest_rows=len(manifest), n_runs_analyzed=int((~df.exclude).sum()),
                 n_excluded=int(df.exclude.sum()),
@@ -2221,7 +2222,8 @@ def pooled(dfs, out_root, ecg_details=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sessions", nargs="+", help="session directories or .zip exports")
-    ap.add_argument("--out", default="analysis", help="output root (default: ./analysis)")
+    ap.add_argument("--out", default=os.path.join(REPO_ROOT, "analysis"),
+                    help="output root (default: <repo>/analysis)")
     ap.add_argument("--pool", action="store_true", help="also write pooled statistics across sessions")
     a = ap.parse_args()
     tmp, dfs, ecg = [], [], {}

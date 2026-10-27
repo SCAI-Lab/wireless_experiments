@@ -8,7 +8,7 @@ session records exactly what produced its data.
 Best-effort throughout: every probe has a short timeout and records an
 "error" string instead of raising, so a missing tool never blocks a run.
 
-Standalone: python3 log_environment.py [OUT_DIR] [--config PATH]
+Standalone: python3 scripts/log_environment.py [OUT_DIR] [--config PATH]
 """
 
 import json
@@ -176,7 +176,7 @@ def collect_environment(cfg, load_client=True):
         "wifi_interfaces": _wifi_ifaces(),
         "rfkill": _run(["rfkill", "list"]),
         "nrf_sniffer": _sniffer(),
-        "experiment_repo": _git_state(Path(__file__).resolve().parent.parent),
+        "experiment_repo": _git_state(Path(__file__).resolve().parents[2]),
         "devices": devices,
         "load_client": (
             _load_client((cfg.get("row2_duty_cycle") or {}).get("iperf"))

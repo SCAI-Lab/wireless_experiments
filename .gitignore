@@ -1,25 +1,25 @@
 # Python
 __pycache__/
 *.pyc
+.mypy_cache/
 
-# Experiment data and analysis outputs (large; may contain bystander BT/WiFi addresses)
+# Raw experiment data (large; may contain bystander BT/WiFi addresses)
 captures/
-analysis/
-analysis_compare/
 *.pcapng
 *.btsnoop
-*.png
+
+# Analysis outputs: only the paper's sessions (chamber_1/2, gym_SPZ) and
+# their pooled analyses are tracked, figures included
+/analysis/*
+!/analysis/*_chamber_[0-9]/
+!/analysis/gym_SPZ_*/
+!/analysis/pooled_*/
 
 # Local / editor / tool files
 .claude/
 .~lock.*#
 Claude outputs/
-session_lib.zip
+scripts/session_lib.zip
 
 # Third-party papers
-*.pdf
-
-# Analysis results of the paper's sessions (chamber_1/2, gym_SPZ): keep their figures
-!/*_chamber_*/figures/*
-!/gym_SPZ_*/figures/*
-!/pooled_*/figures/*
+references/

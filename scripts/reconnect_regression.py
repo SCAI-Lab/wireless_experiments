@@ -43,7 +43,7 @@ or if BlueZ ends up holding a stale "connected" device (the 2026-09-28
 row3 max_load wedge; see session_lib.heal_stale_bluez_connection).
 
 Usage:
-  python3 reconnect_regression.py [--device Polar_H10] [--cycles 5]
+  python3 scripts/reconnect_regression.py [--device Polar_H10] [--cycles 5]
                                   [--block-s 8] [--recover-s 75] [--stream-s 20]
 """
 

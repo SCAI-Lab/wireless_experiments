@@ -8,7 +8,7 @@ miss_age_cens_1000ms_pct). Airtime p95 is the inclusive (linear) 95th percentile
 statistics.quantiles extrapolates past the maximum with few windows).
 
 Usage:
-    python3 paper_figures/tab_s_gym_runs.py <chamber_1 per_run.csv> <template.tex> <out_dir>
+    python3 scripts/paper_figures/tab_s_gym_runs.py <chamber_1 per_run.csv> <template.tex> <out_dir>
 
 <chamber_1 per_run.csv>: analyze_session output of 20261007_105222_chamber_1 (Corsano
 AFH-free no-load reference). <template.tex>: current tab_s_gym_runs.tex; its header and
@@ -24,8 +24,9 @@ import time
 import numpy as np
 import pandas as pd
 
-REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, REPO)
+SCRIPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+REPO = os.path.join(SCRIPTS, "..")
+sys.path.insert(0, SCRIPTS)
 import analyze_session as A  # noqa: E402
 
 CAP = os.path.join(REPO, "captures")

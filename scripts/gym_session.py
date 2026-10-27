@@ -54,19 +54,19 @@ Masks are frozen into gym_masks.json on the first run, so a resumed or
 second-day session can't drift.
 
 Usage:
-    python3 gym_session.py run                        # everything, new captures/gym_<date>_<time>/
-    python3 gym_session.py run --resume               # continue the latest gym_ session
-    python3 gym_session.py run --resume --rerun-failed
-    python3 gym_session.py run --only survey          # just pick the channel (new session)
-    python3 gym_session.py run --resume --only sensors        # sensors, monitor run elsewhere
-    python3 gym_session.py run --session <chamber TS> --only monitor --wifi-channel 6
+    python3 scripts/gym_session.py run                        # everything, new captures/gym_<date>_<time>/
+    python3 scripts/gym_session.py run --resume               # continue the latest gym_ session
+    python3 scripts/gym_session.py run --resume --rerun-failed
+    python3 scripts/gym_session.py run --only survey          # just pick the channel (new session)
+    python3 scripts/gym_session.py run --resume --only sensors        # sensors, monitor run elsewhere
+    python3 scripts/gym_session.py run --session <chamber TS> --only monitor --wifi-channel 6
                                                       # chamber airtime check, until Ctrl+C
-    python3 gym_session.py people 14                  # people count from another terminal
-    python3 gym_session.py masks                      # show the masks, no hardware
-    python3 gym_session.py parse                      # results.csv, results_with_background.csv,
+    python3 scripts/gym_session.py people 14                  # people count from another terminal
+    python3 scripts/gym_session.py masks                      # show the masks, no hardware
+    python3 scripts/gym_session.py parse                      # results.csv, results_with_background.csv,
                                                       # and analysis/<session>/ (the table to analyse:
                                                       # analysis/<session>/tables/per_run.csv)
-    python3 gym_session.py covariates --session <TS>  # join only, any session
+    python3 scripts/gym_session.py covariates --session <TS>  # join only, any session
 
 `run` starts a NEW gym_ session unless --resume (latest gym_ session) or
 --session NAME (gym_ prefix optional). The other commands default to the
@@ -123,6 +123,7 @@ from privacy_scrub import scrub_session
 from background_monitor import log_people, new_gym_session_dir, resolve_session_dir
 
 MONITOR_SCRIPT = str(Path(__file__).resolve().parent / "background_monitor.py")
+REPO_ROOT = Path(__file__).resolve().parent.parent
 PARTS = ("survey", "monitor", "sensors")
 
 ROW_FREE = "gym_free"
@@ -333,7 +334,7 @@ def check_monitor_running(session_dir, wifi_ch, max_age_s):
     rows = _read_csv(path)
     if not rows:
         raise InfrastructureCheckError(
-            f"no background airtime in {path} -- start `python3 background_monitor.py "
+            f"no background airtime in {path} -- start `python3 scripts/background_monitor.py "
             f"run --session {Path(session_dir).name}` in another terminal first "
             f"(or --allow-no-monitor to run without the main covariate)"
         )
@@ -789,7 +790,7 @@ def mask_columns(masks, condition, sweeps_before):
     }
 
 
-def run_analysis(session_dir, out_root="analysis"):
+def run_analysis(session_dir, out_root=str(REPO_ROOT / "analysis")):
     """The chamber's analysis (analyze_session.py) on this session: added
     delay, deadline misses, link losses, Corsano delivery, AFH maps -- with
     the background covariates picked up from results_with_background.csv.
@@ -1078,7 +1079,7 @@ def main():
         if "sensors" in parts:
             scrub_run_outputs(cfg, session_dir)  # also after an abort or Ctrl+C
         if "sensors" in parts and not finished:
-            log.info(f"Continue with: python3 gym_session.py run --session {session_ts}")
+            log.info(f"Continue with: python3 scripts/gym_session.py run --session {session_ts}")
 
 if __name__ == "__main__":
     main()
