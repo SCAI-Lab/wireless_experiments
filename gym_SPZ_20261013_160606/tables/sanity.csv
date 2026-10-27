@@ -1,0 +1,17 @@
+check,status,detail
+captures present,PASS,all manifest captures found
+no constrained map in AFH-free runs,PASS,ok
+constrained maps within requested mask,PASS,ok
+AFH channel map logged,PASS,ok
+QBSS airtime present for loaded runs,PASS,ok
+QBSS consistent within load level,PASS,ok
+iperf load recorded,PASS,0 of 0 loaded runs have iperf throughput
+single driver invocation per device,PASS,ok
+final connection interval consistent per device,PASS,ok
+no startup disconnects,INFO,1 runs with a disconnect in the first 15s (pre-existing link): gym_forced_Corsano_forced_k8_rep1.btsnoop
+no link loss without load,PASS,ok
+link recovered after loss,PASS,ok
+no BlueZ stale-connection wedge,PASS,ok
+no-load data rate stable,PASS,n/a
+scanner adapter unmanaged,PASS,'unmanaged' set 0 times
+results.csv agrees with HCI (intervals),PASS,ok

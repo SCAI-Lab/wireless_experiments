@@ -150,7 +150,7 @@ def check_ros_packages(cfg):
     if missing:
         raise InfrastructureCheckError(
             f"ROS package(s) not found: {missing} -- source the driver workspace "
-            f"first, e.g. `source ~/test_ws/install/setup.bash`"
+            f"first, e.g. `source $ROS_WS/install/setup.bash`"
         )
 
 

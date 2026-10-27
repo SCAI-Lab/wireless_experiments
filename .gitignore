@@ -18,3 +18,8 @@ session_lib.zip
 
 # Third-party papers
 *.pdf
+
+# Analysis results of the paper's sessions (chamber_1/2, gym_SPZ): keep their figures
+!/*_chamber_*/figures/*
+!/gym_SPZ_*/figures/*
+!/pooled_*/figures/*

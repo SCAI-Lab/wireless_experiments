@@ -1,6 +1,7 @@
 """Config loading, session directories, manifest.csv and resume/rerun bookkeeping."""
 
 import csv
+import os
 import re
 import time
 from pathlib import Path
@@ -16,8 +17,16 @@ from .logs import log
 
 
 def load_config(path="config.yaml"):
+    """config.yaml, with ${VAR} and ~ expanded in each device's
+    driver_source_dir (it points into the ROS workspace the drivers are
+    built in: export ROS_WS=<that workspace>). Left unexpanded if the
+    variable isn't set -- driver_version then just reads blank."""
     with open(path) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    for d in cfg.get("devices") or []:
+        if d.get("driver_source_dir"):
+            d["driver_source_dir"] = os.path.expanduser(os.path.expandvars(d["driver_source_dir"]))
+    return cfg
 
 
 def get_output_dir(cfg):

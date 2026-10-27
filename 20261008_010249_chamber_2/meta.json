@@ -1,0 +1,22 @@
+{
+  "session_id": "20261008_010249_chamber_2",
+  "input": "captures/20261008_010249_chamber_2",
+  "script_version": "1.4.3",
+  "analyzed_at": "2026-10-21T12:12:08",
+  "n_manifest_rows": 12,
+  "n_runs_analyzed": 12,
+  "n_excluded": 0,
+  "noload_settle_s": 40.0,
+  "ecg_drift_ppm": -7.9,
+  "ecg_drift_ppm_per_run": [
+    -9.4,
+    -6.3
+  ],
+  "sha256": {
+    "manifest.csv": "11337573d11a43d6b3e8783978a16c58b2d00666530a7b6a51e97307222e4b49",
+    "session.log": "62666ab83cb66399cce918ec175c4c27f8fa7eaec469012b3d6a2c25672d4e00"
+  },
+  "driver_commands": {
+    "ros2 run polar_ros2 polar_connector --mac-address-or-name A0:9E:1A:DF:7F:6C --no-publish-battery": 12
+  }
+}

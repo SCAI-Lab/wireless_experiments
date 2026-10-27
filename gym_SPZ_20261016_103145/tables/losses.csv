@@ -1,0 +1,5 @@
+device,condition,replicate,capture_file,loss_idx,t_loss_s,reason,t_first_adv_s,t_first_connectable_adv_s,n_nonconnectable_advs,t_first_connect_cmd_s,t_link_back_s,t_data_back_s
+Corsano,forced_k0,3,gym_forced_Corsano_forced_k0_rep3.btsnoop,0,51.638,0x8,5.049,5.049,0,5.058,5.731,20.941
+Corsano,forced_k0,3,gym_forced_Corsano_forced_k0_rep3.btsnoop,1,167.737,0x8,5.514,5.514,0,5.526,5.748,23.582
+Corsano,forced_k0,3,gym_forced_Corsano_forced_k0_rep3.btsnoop,2,224.258,0x8,8.504,8.504,0,8.514,8.965,17.881
+Corsano,forced_k0,3,gym_forced_Corsano_forced_k0_rep3.btsnoop,3,293.678,0x8,5.275,5.275,0,5.278,5.736,

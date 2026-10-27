@@ -1,0 +1,33 @@
+{
+  "session_id": "20261007_105222_chamber_1",
+  "input": "captures/20261007_105222_chamber_1",
+  "script_version": "1.4.3",
+  "analyzed_at": "2026-10-21T12:11:59",
+  "n_manifest_rows": 108,
+  "n_runs_analyzed": 108,
+  "n_excluded": 0,
+  "noload_settle_s": 40.0,
+  "ecg_drift_ppm": 219.4,
+  "ecg_drift_ppm_per_run": [
+    221.3,
+    201.2,
+    233.2,
+    227.5,
+    207.9,
+    219.4,
+    211.5,
+    220.0,
+    219.4,
+    210.7,
+    228.4,
+    213.6
+  ],
+  "sha256": {
+    "manifest.csv": "50a25fd8bda227228e4e750c37665bb61829fac44c41f709486b29b0dcfb0493",
+    "session.log": "553105ca89ebf47552841030a6a8d21eb46f1a19ed1004e55455930b1b9cac25"
+  },
+  "driver_commands": {
+    "ros2 run polar_ros2 polar_connector --mac-address-or-name A0:9E:1A:DF:7F:6C --no-publish-battery": 51,
+    "ros2 run corsano_ros corsano_ros --mac-address-or-name D9:D9:DF:CB:74:79 --publish-bioz --publish-accel --publish-hr --publish-stress --plan HOSPITAL_RAW --test-republish-latest": 59
+  }
+}

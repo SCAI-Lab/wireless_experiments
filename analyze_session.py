@@ -2010,7 +2010,7 @@ def analyze(sdir, input_path, out_root):
                         fig_polar_timelines(df, ecg_details, fdir, sid), fig_requests(df, fdir, sid)] if f]
 
     # --- provenance ---
-    meta = dict(session_id=sid, input=os.path.abspath(input_path), script_version=SCRIPT_VERSION,
+    meta = dict(session_id=sid, input=os.path.relpath(os.path.abspath(input_path), os.path.dirname(os.path.abspath(__file__))), script_version=SCRIPT_VERSION,
                 analyzed_at=dt.datetime.now().isoformat(timespec="seconds"),
                 n_manifest_rows=len(manifest), n_runs_analyzed=int((~df.exclude).sum()),
                 n_excluded=int(df.exclude.sum()),

@@ -123,10 +123,10 @@ devices:
     launch_cmd: "ros2 run polar_ros2 polar_connector --mac-address-or-name A0:9E:1A:DF:7F:6C --no-publish-battery"
     # Driver source tree used for driver_version in results.csv (its own
     # git commit hash, since package.xml's <version> is an unmaintained
-    # 0.0.0 placeholder in both drivers). This project's driver code lives
-    # in ~/test_ws, NOT ~/scai_ws (a separate, stale checkout) -- confirmed
-    # 2026-09-28.
-    driver_source_dir: "/home/monicaperez/test_ws/src/ros4healthcare/ros2_hc_drv/polar_ros2"
+    # 0.0.0 placeholder in both drivers). ROS_WS is the ROS 2 workspace the
+    # drivers are built in (export ROS_WS=<path>; its install/setup.bash
+    # must be sourced before running a session).
+    driver_source_dir: "${ROS_WS}/src/ros4healthcare/ros2_hc_drv/polar_ros2"
     # ROS topic the driver publishes sensor_msgs/BatteryState on, when its
     # own --publish-battery is enabled -- see start_rosbag_recording (every
     # run's rosbag already captures this with no extra instrumentation
@@ -158,7 +158,7 @@ devices:
     # records raw ACC (20261005_110316 and 20261006_000828 both had zero ACC
     # file growth under it).
     launch_cmd: "ros2 run corsano_ros corsano_ros --mac-address-or-name D9:D9:DF:CB:74:79 --publish-bioz --publish-accel --publish-hr --publish-stress --plan HOSPITAL_RAW --test-republish-latest"
-    driver_source_dir: "/home/monicaperez/test_ws/src/ros4healthcare/ros2_hc_drv/corsano_ros"
+    driver_source_dir: "${ROS_WS}/src/ros4healthcare/ros2_hc_drv/corsano_ros"
     # publish_battery defaults to True in corsano_ros_wrapper.py and isn't
     # disabled above, so this is already being recorded into every run's
     # rosbag today (confirmed: 7 /corsano/battery messages in a real

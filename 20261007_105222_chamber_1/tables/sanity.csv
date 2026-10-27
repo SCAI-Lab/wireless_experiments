@@ -1,0 +1,17 @@
+check,status,detail
+captures present,PASS,all manifest captures found
+no constrained map in AFH-free runs,PASS,ok
+constrained maps within requested mask,PASS,ok
+AFH channel map logged,PASS,ok
+QBSS airtime present for loaded runs,PASS,ok
+QBSS consistent within load level,WARN,outliers (likely sampling glitches): row2_Polar_H10_duty100pct_rep2.btsnoop (37.0% vs median 92.1%); row3_Polar_H10_forced_channel_duty50pct_rep3.btsnoop (33.5% vs median 50.2%); row3_Polar_H10_forced_channel_duty50pct_rep2.btsnoop (30.1% vs median 50.2%)
+iperf load recorded,PASS,80 of 80 loaded runs have iperf throughput
+single driver invocation per device,PASS,ok
+final connection interval consistent per device,PASS,ok
+no startup disconnects,INFO,1 runs with a disconnect in the first 15s (pre-existing link): row3_Corsano_forced_channel_duty25pct_rep1.btsnoop
+no link loss without load,PASS,ok
+link recovered after loss,INFO,3 of 15 runs with a link loss never reconnected; unobserved tail 0--5 s (by device: Corsano 3/15)
+no BlueZ stale-connection wedge,PASS,ok
+no-load data rate stable,PASS,Corsano: 802 B/s (CV 0.2%); Polar_H10: 1689 B/s (CV 0.2%)
+scanner adapter unmanaged,PASS,'unmanaged' set 192 times
+results.csv agrees with HCI (intervals),PASS,ok

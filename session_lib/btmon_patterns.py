@@ -66,7 +66,7 @@ ACL_TX_RE = re.compile(r"^< ACL Data TX: Handle (\d+)")
 
 # Polar H10 sample-completeness (deferred TODO from parse_capture_file,
 # implemented once the actual wire format was confirmed against both the
-# polar_ros2 driver source (test_ws/src/ros4healthcare/ros2_hc_drv/
+# polar_ros2 driver source ($ROS_WS/src/ros4healthcare/ros2_hc_drv/
 # polar_ros2/polar_ros2/submodules/PolarH10.py) and a real capture
 # (captures/20260918_152906/row1_Polar_H10_baseline_rep1.btsnoop) -- e.g. a
 # real ACC frame's Data: 026a8ac782b54e5208013ffcebffd6ff... decodes as

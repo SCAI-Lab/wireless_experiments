@@ -178,7 +178,15 @@ without re-running.
 | Polar_H10 | A0:9E:1A:DF:7F:6C | `polar_ros2 polar_connector`: ECG 130 Hz and ACC 200 Hz over one PMD characteristic; HR/RR separately | `polar_acc`, `polar_ecg`, `polar_hr` |
 | Corsano | D9:D9:DF:CB:74:79 | `corsano_ros corsano_ros --publish-bioz --publish-accel --publish-hr --publish-stress --test-republish-latest` | `corsano/acceleration`, `corsano/bioz`, and the watch's own files must grow |
 
-Both drivers live in `~/test_ws/src/ros4healthcare/ros2_hc_drv/`.
+Both drivers live in `$ROS_WS/src/ros4healthcare/ros2_hc_drv/`, where
+`ROS_WS` is the ROS 2 workspace they are built in. Set it and source that
+workspace before running any session script:
+
+```bash
+export ROS_WS=<path to your ROS 2 workspace>
+source /opt/ros/jazzy/setup.bash
+source $ROS_WS/install/setup.bash
+```
 `results.csv` records their git commit as `driver_version`.
 
 `--test-republish-latest` (Corsano, **test only**) republishes the latest
