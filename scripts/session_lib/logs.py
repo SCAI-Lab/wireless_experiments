@@ -32,6 +32,18 @@ class _ConsoleColorFormatter(logging.Formatter):
         return f"{color}{text}{self.RESET}"
 
 
+class _OwnDebugOnly(logging.Filter):
+    """DEBUG records only from this project's own loggers. Libraries log at
+    DEBUG through the root logger too: bleak/dbus-fast dump every D-Bus
+    signal, including each nearby device's address and name (bystanders'
+    phones in the gym, 2026-10-13/16), and matplotlib its font lookups."""
+
+    OWN = ("session_lib", "reconnect_regression", "__main__")
+
+    def filter(self, record):
+        return record.levelno >= logging.INFO or record.name.split(".")[0] in self.OWN
+
+
 def setup_logging(session_dir):
     """Configure logging to both the console and a log file inside this
     session's own directory, so the full history of a session is on disk,
@@ -47,6 +59,7 @@ def setup_logging(session_dir):
     )
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(logging.DEBUG)
+    file_handler.addFilter(_OwnDebugOnly())
     file_handler.setFormatter(fmt)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
