@@ -1,7 +1,7 @@
 # Session gym_SPZ_20261016_103145
 
 Input: `captures/gym_SPZ_20261016_103145`  
-Analyzed: 2026-10-21T12:12:10 (analyze_session.py 1.4.3)  
+Analyzed: 2026-10-27T13:29:43 (analyze_session.py 1.4.3)  
 Runs: 24 analyzed, 0 excluded
 
 No-load window starts 40 s after driver launch (default, no loaded runs).  
