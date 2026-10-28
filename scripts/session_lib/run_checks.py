@@ -34,7 +34,7 @@ MIN_INDUCED_LOAD_FRACTION = 0.8
 # Row 1's two sub-runs (see run_test1_connection_interval) are both
 # no-interference; so are the 0%-duty conditions of Rows 2/5 and the
 # forced-channel runs without load. Rows: 3 = forced_channel,
-# 4 = endurance, 5 = headroom_sweep, 6 = contention (see config.yaml).
+# 4 = endurance, 5 = headroom_sweep, 8 = headroom at 100% (see config.yaml).
 #
 # For rows with retry_on_fail=False, this set only adds a stricter label;
 # for Row 1 (retry_on_fail=True) a failure is retried and can abort the
@@ -47,8 +47,6 @@ BASELINE_ROW_CONDITIONS = {
     ("row3", "forced_channel_no_load"),
     ("row3", "forced_channel_no_load_bracket"),
     ("row4", "duty0pct_long"),
-    ("row6", "contention_0"),
-    ("row6", "contention_0_bracket"),
     # Row 5 headroom sweep's no-load control (one small mask, no WiFi load),
     # at config.yaml's row5_headroom_sweep.no_load_control_k (k=2).
     ("row5", "headroom_k2_no_load"),
@@ -76,17 +74,13 @@ EXPECTED_INSTABILITY_ROW_CONDITIONS = {
     # Row 8: Row 5's sweep at 100% load (row8_headroom_saturation.k_values).
     ("row8", "headroom_k2_duty100pct"),
     ("row8", "headroom_k8_duty100pct"),
-    # Row 7's scan-interference diagnostic: Row 3's forced_channel_duty50pct
-    # setup with the QBSS scanner toggled between reps.
-    ("row7", "scan_on"),
-    ("row7", "scan_off"),
 }
 
 # Rows whose EVERY condition (including no-load ones) deliberately forces a
 # host channel classification -- see FORCED_CHANNEL_RANGE / channel_masks.
 # Captures of all other rows must never show a forced bitmap (leak
-# detection). Row 7 uses Row 3's FORCED_CHANNEL_RANGE for both conditions.
-FORCED_CHANNEL_ROWS = {"row3", "row5", "row7", "row8"}
+# detection).
+FORCED_CHANNEL_ROWS = {"row3", "row5", "row8"}
 
 
 def _known_forced_channel_hex_signatures(cfg):

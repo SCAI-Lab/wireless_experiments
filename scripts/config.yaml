@@ -131,10 +131,6 @@ devices:
     # minutes, so a 90 s calibration run can legitimately have none.
     expected_topics: ["corsano/acceleration", "corsano/bioz"]
 
-  # - name: VivaLink
-  #   mac_address: "AA:BB:CC:DD:EE:03"
-  #   launch_cmd: "ros2 launch ros4hc_drv vivalink.launch.py mac_address:=AA:BB:CC:DD:EE:03"
-  #
   # mac_address is used to explicitly disconnect a device from BlueZ after
   # its tests finish (see disconnect_ble_device in session_lib/drivers.py):
   # BlueZ auto-reconnects a bonded, trusted device in the background.
