@@ -2,8 +2,10 @@
 
 Automated BLE-under-WiFi-interference experiments for two wearable sensors,
 run in an anechoic chamber (`chamber_session.py`) and, separately, in a real
-rehab gym (`gym_session.py`). Both scripts share one `config.yaml` and the
-`session_lib/` package.
+rehab gym (`gym_session.py`), and their replay through the MEDWEAR platform
+(`replay/`). Both session scripts share one `config.yaml` and the
+`session_lib/` package. This is the code of the MEDWEAR paper's wireless
+experiments.
 
 ## Repository layout
 
@@ -18,8 +20,23 @@ Run everything from the repository root, e.g. `python3 scripts/gym_session.py ru
 Paths work from any directory: `config.yaml` is found next to the scripts,
 sessions go to `<repo>/captures/` and analyses to `<repo>/analysis/`.
 
-*Updated 2026-10-06. Replaces `wireless_tests_guide.docx` (last updated
-2026-09-25).*
+## Data and reproducing the paper
+
+The recorded sessions (two chamber sessions, three gym sessions) and the
+replay logs are archived on Zenodo (DOI: TODO), one zip per session. Unzip
+the sessions into `captures/` and rerun the analysis:
+
+```bash
+mkdir -p captures && for z in /path/to/zenodo/2026*.zip /path/to/zenodo/gym_SPZ_*.zip; do unzip -q "$z" -d captures; done
+python3 scripts/analyze_session.py captures/* --pool      # -> analysis/
+```
+
+This reproduces the committed `analysis/` folders. The replay analysis is
+described in `replay/README.md`. The published copies were cleaned of
+bystanders' and researchers' identifiers with `scripts/export_dataset.py`
+(see [Privacy](#privacy)).
+
+License: MIT (see `LICENSE`).
 
 ## Contents
 
@@ -46,19 +63,16 @@ sessions go to `<repo>/captures/` and analyses to `<repo>/analysis/`.
 | `gym_session.py` | A separate, later visit to a real rehab gym | Sensor tests under the gym's own WiFi (no AP, no Pi): free channel selection plus forced k = 0, 2, 8 on the gym's busiest channel, in randomised blocks. |
 | `background_monitor.py` | Alongside a gym session (or a chamber airtime check) | Separate process on separate radios: WiFi airtime on the forced channel (T3U Plus, monitor mode), network counts, Bluetooth advertiser counts (nRF sniffer), people counts. |
 
-> **"Row 6" naming:** older gym sessions label their runs "row6"; since
-> 2026-10-12 the gym uses `gym_free` / `gym_forced`. Neither relates to
-> chamber row numbers. The chamber script's old row 6 (BLE-BLE contention)
-> and row 7 (QBSS scan interference) were **removed on 2026-10-06**, but their
-> data in older sessions still parses. The new headroom-at-100% row is
-> numbered **8**, so its label never collides with that older data.
+> **Row numbers:** the chamber rows are 1–5 and 8 (there are no rows 6 and
+> 7). Gym runs are labelled `gym_free` / `gym_forced` and don't relate to
+> chamber row numbers.
 
 **One device at a time.** Each device runs every enabled row before the next
 device starts; devices are not interleaved row by row. This matches real use
-(one sensor active per patient). It also avoids a confirmed bug: BlueZ
-auto-reconnects a bonded device in the background after its driver is
-killed, and that stray connection competes for the shared radio. Every run
-therefore explicitly disconnects its device from BlueZ afterwards.
+(one sensor active per patient). BlueZ also auto-reconnects a bonded device
+in the background after its driver is stopped, and that connection would
+compete for the shared radio, so every run explicitly disconnects its
+device from BlueZ afterwards.
 
 **Captured automatically for every run:**
 
@@ -80,51 +94,37 @@ without re-running.
 
 ## 2. Chamber layout
 
-```
- Platform A ("patient + gateway")                     Platform B ("infrastructure")
- ┌─────────────────────────────────┐                  ┌──────────────────────────────┐
- │ Sensors (Polar H10, Corsano)    │                  │ AP (TP-Link, WiFi ch 6)      │
- │      │ BLE, short (same         │                  │      ▲                       │
- │      │ platform), line of sight │                  │      │ UDP load, close by    │
- │ Laptop = BLE central (hci0)     │ ◄──── 2 m ─────► │ Raspberry Pi                 │
- │  └ USB: nRF52840 sniffer        │                  │ = WiFi load client (STA)     │
- └────────────────┬────────────────┘                  └──────────────────────────────┘
-                  │ USB extension
-                  └──────────► USB WiFi adapter (QBSS + occupancy scan),
-                               on Platform B, away from the BLE link
-```
+![Chamber setup: top view of the RF-shielded room with platforms A and B](docs/chamber_setup.png)
 
-- **WiFi load:** UDP from the load client (STA) to the AP on channel 6, at a
-  fraction of the link's measured max throughput (see [row 2](#5-rows-chamber_sessionpy)).
-- **Record the actual distances and transmit powers on the day.** WiFi load
-  as a fraction of max is not comparable across setups. The geometry is what
-  lets others estimate the intended-to-unintended (I/U) signal ratio, as in
-  ANSI C63.27 work (Al Kalaa et al. 2020).
+- **Room:** RF-shielded, 3.7 × 3.7 × 2.3 m, pyramidal absorbers on walls,
+  ceiling and floor.
+- **Two platforms, 35 × 35 cm, 2.28 m apart.** Each platform is one compact
+  cluster, so the gap between them is the interference distance.
+  - **Platform A:** the laptop (top-left, at 45°), the nRF52840 sniffer, the
+    sensor under test (one at a time, H10 or Corsano), and the USB WiFi
+    adapter in the bottom-right corner. Raise the sensor on cardboard or
+    foam, not metal, with nothing between it and the laptop's antennas (top
+    of the screen bezel).
+  - **Platform B:** the AP (TP-Link TL-MR6400, WiFi channel 6) and, behind
+    it, the Raspberry Pi 3 B+. The Pi sends the iperf3 UDP load over WiFi to
+    the AP, which forwards it over Ethernet to the laptop (the iperf3 server).
 - **The laptop is the BLE central.** The drivers, btmon, AFH polling and
   channel forcing all run on its built-in Bluetooth (`btmon_controller: hci0`,
-  an Intel AX211). It must sit with the sensors; extension cables can move only
-  the USB devices. Results describe this controller's AFH: in BLE, the central
-  decides the channel map.
-- **The Raspberry Pi is only the WiFi load client,** reached over SSH.
-- **The USB WiFi adapter actively scans** (probe requests on every channel,
-  including 6). Keep it away from the BLE link; it only needs to hear the
-  AP's beacons.
-- **Two small platforms, 2 m apart** (the setup available as of 2026-10-07).
-  Each platform is one compact cluster, so the 2 m gap is the interference
-  distance (Pi to laptop and sensors).
-  - **Platform A:** both sensors side by side, at the same distance and
-    height from the laptop's antennas (top of the screen bezel), with nothing
-    in between. Raise them on cardboard or foam, not metal.
-  - **Platform B:** the Pi and the AP, with a few tens of centimetres between
-    their antennas if possible (very close range can overload a WiFi
-    receiver; watch the startup max-throughput measurement). The USB WiFi
-    adapter also goes here, as far as possible from the BLE link.
-- **Keep the sensors' signal comparable.** Last night the Corsano came in at
-  −84 dBm against −52 for the Polar, which confounds any device comparison.
-  Place both sensors at a similar distance and orientation from the laptop,
-  and check the `connection RSSI` lines in the first row 1 runs.
-- **Distances to record:** sensor–laptop, Pi–AP, Pi–laptop, Pi–sensors, and
-  WiFi adapter–laptop. Keep the geometry identical for the whole campaign.
+  an Intel AX211). Results describe this controller's AFH: in BLE, the
+  central decides the channel map.
+- **The USB WiFi adapter** reads the AP's QBSS load and the occupancy of all
+  channels. These are active scans (probe requests on every channel), so it
+  must be a radio separate from the laptop's Bluetooth.
+- **WiFi load:** a fraction of the link's measured max throughput (see
+  [row 2](#5-rows-chamber_sessionpy)).
+- **Keep the geometry identical for the whole campaign and record it:**
+  sensor–laptop, Pi–AP and platform distances, and transmit powers. WiFi
+  load as a fraction of max is not comparable across setups; the geometry
+  lets others estimate the intended-to-unintended (I/U) signal ratio, as in
+  ANSI C63.27 work (Al Kalaa et al. 2020).
+- **Keep the sensors' signal comparable.** Place each sensor at the same
+  distance and orientation from the laptop, and check the `connection RSSI`
+  lines in the first row 1 runs.
 
 ## 3. Before the chamber day
 
@@ -141,10 +141,9 @@ without re-running.
      means a theoretical UDP ceiling of about 66 Mbit/s; `65.0 MBit/s MCS 7`
      means about 59 Mbit/s (single stream, 20 MHz, with frame aggregation).
 5. **Max-throughput baseline:**
-   - `row2_duty_cycle.iperf.expected_max_mbps` (60.6) was measured in the
-     **lab** in test mode, not in the chamber.
-   - On the first chamber day, measure the chamber value (one `--test-mode`
-     start only warns), then update `expected_max_mbps` and its comment.
+   - `row2_duty_cycle.iperf.expected_max_mbps` (60.6 Mbit/s) is the expected
+     max of this setup. For a new setup, measure it with one `--test-mode`
+     start (which only warns) and update the value.
    - Real runs (without `--test-mode`) stop if the measured max is outside
      ±`max_mbps_tolerance_pct` (10%).
 6. **USB WiFi adapter** (`qbss_iface`, `ambient_scan.iface`): it **must** be a
@@ -153,7 +152,7 @@ without re-running.
      the code refuses to scan from it.
    - One-time setup: `sudo ip link set <iface> up` and
      `sudo setcap cap_net_admin+eip $(which iw)`.
-   - **After every replug or reboot:** `sudo ip link set wlxc03a55a6e1bf up`.
+   - **After every replug or reboot:** `sudo ip link set <iface> up`.
      Don't use `nmcli … managed yes`: the session unmanages the adapter, and
      NetworkManager then switches it off again.
 7. **Foreign WiFi check:** at startup, the session scans twice with the USB
@@ -170,8 +169,9 @@ without re-running.
 9. **Corsano measurement plan:** check that the watch records accelerometer
    data (see [caveats](#10-known-limitations-and-caveats)). In the driver log,
    look for `Plan read back` and the `ACC: no new data` warning.
-10. **Wear the sensors:**
-   - The Polar baseline fails without skin contact (`no messages on /polar_hr`).
+10. **Sensor data:**
+   - The Polar publishes HR (`/polar_hr`) only with skin contact, so missing
+     HR is only a warning; ECG and ACC are required.
    - The Corsano baseline fails if the watch records nothing new during the run.
 11. **Charge** all sensors, the laptop and the Pi.
 12. **Sensor firmware:** the drivers don't log it. Read it once with the
@@ -188,8 +188,8 @@ without re-running.
 
 | Device | MAC address | Driver | Baseline data check (`expected_topics`) |
 |---|---|---|---|
-| Polar_H10 | A0:9E:1A:DF:7F:6C | `polar_ros2 polar_connector`: ECG 130 Hz and ACC 200 Hz over one PMD characteristic; HR/RR separately | `polar_acc`, `polar_ecg`, `polar_hr` |
-| Corsano | D9:D9:DF:CB:74:79 | `corsano_ros corsano_ros --publish-bioz --publish-accel --publish-hr --publish-stress --test-republish-latest` | `corsano/acceleration`, `corsano/bioz`, and the watch's own files must grow |
+| Polar_H10 | A0:9E:1A:DF:7F:6C | `polar_ros2 polar_connector --no-publish-battery`: ECG 130 Hz and ACC 200 Hz over one PMD characteristic; HR/RR separately | `polar_acc`, `polar_ecg` (`polar_hr` only warns) |
+| Corsano | D9:D9:DF:CB:74:79 | `corsano_ros corsano_ros --publish-bioz --publish-accel --publish-hr --publish-stress --plan HOSPITAL_RAW --test-republish-latest` | `corsano/acceleration`, `corsano/bioz`, and the watch's own files must grow |
 
 Both drivers live in `$ROS_WS/src/ros4healthcare/ros2_hc_drv/`, where
 `ROS_WS` is the ROS 2 workspace they are built in. Set it and source that
@@ -213,7 +213,7 @@ baseline check looks at the watch's own file growth instead.
 |---|---|---|---|---|---|---|
 | 1 | Connection interval | No interference. Records the negotiated interval, latency and supervision timeout, and watches for a renegotiation mid-session. A failed run is retried; repeated failure stops the session. | 90 s + 600 s | 2 | 11.5 | Yes |
 | 2 | Offered-load sweep ("duty cycle") | WiFi UDP load at 0/25/50/75/100% of the measured max, with AFH free to use any channel. (Order shuffled; final `duty0pct_bracket` drift check.) | 300 s | 5 levels × 3 + 1 | 80 | Yes |
-| 3 | Forced channel | Same loads as row 2, but AFH restricted to channels 12–19 ("nowhere to escape"). (Order shuffled; final `forced_channel_no_load_bracket` drift check, added 2026-10-06.) | 300 s | 5 × 3 + 1 | 80 | Yes |
+| 3 | Forced channel | Same loads as row 2, but AFH restricted to channels 12–19 ("nowhere to escape"). (Order shuffled; final `forced_channel_no_load_bracket` drift check.) | 300 s | 5 × 3 + 1 | 80 | Yes |
 | 4 | Endurance | One 0% and one 100% run, AFH free (**not** forced), sized for a disconnect-rate bound. | 1800 s | 2 | 60 | Yes |
 | 5 | Headroom sweep | Channels 12–19 plus k = 0/2/4/8 clean channels, at 75% load, plus a no-load control at k = 2. (Order shuffled.) | 300 s | 5 × 3 | 75 | Yes |
 | 8 | Headroom at 100% | Row 5 at 100% load for `k_values` (default k = 2 and 8). (Order shuffled.) | 300 s | 2 × 3 | 30 | Yes |
@@ -227,8 +227,7 @@ plus connect and setup time.
 from the Pi to the laptop through the AP. This is repeated 3 × 30 s
 (`max_throughput_runs`, `max_throughput_duration_s`), and the median becomes
 100%. The value is saved in `max_throughput.json` and **reused on every
-`--resume`**, so a session never mixes load scales. (Sessions from before
-2026-10-06 use the first value in their `session.log`.)
+`--resume`**, so a session never mixes load scales.
 
 **What the levels mean.** Each level is UDP at that fraction of the max, sent
 at a steady rate. That makes it an **offered load**, not on/off duty cycling,
@@ -271,14 +270,10 @@ reset afterwards (per run, and again at the end of each row).
 
 ### Why 75% for row 5
 
-This is our own choice, based on our data, not on the literature. With AFH
-free, the link at 75% is clean (Polar 100% delivered, 0/30 drops). At k = 0
-it collapses (drops in 21/24 Polar and 11/12 Corsano runs), which gives the
+This is our own choice, based on pilot data, not on the literature: with AFH
+free, the link at 75% is clean, while at k = 0 it degrades, which gives the
 widest range in which to measure recovery as clean channels are added.
-
-- **Results so far:** Polar recovers fully from k = 2 (a cliff), while
-  Corsano improves gradually up to k = 8.
-- **Row 8** checks whether this holds at 100% load.
+Row 8 repeats the sweep at 100% load.
 
 ## 6. Running the pipeline
 
@@ -295,7 +290,7 @@ widest range in which to measure recovery as clean channels are added.
 | `… run --test-mode` | Lab dry run: the throughput baseline check only warns, and the internal WiFi stays on. Everything else is enforced. |
 | `python3 scripts/chamber_session.py parse [--session SESSION]` | Re-parse captures into `results.csv` without re-running. |
 
-**Data is never overwritten** (since 2026-10-06). Before a run writes
+**Data is never overwritten.** Before a run writes
 anything, existing files at its names are moved aside:
 
 - `…_prerun_failed_<start time>…`: archived by `--rerun-failed`
@@ -336,7 +331,7 @@ self-test.
 ## 7. Output files
 
 Each session gets its own directory under `session.output_dir` (default
-`captures/`), named by timestamp, e.g. `captures/20261005_110316/`.
+`captures/`), named by timestamp, e.g. `captures/20261007_105222/`.
 
 **Per run** (`<row>_<device>_<condition>_rep<N>[_attempt<M>]`):
 
@@ -427,31 +422,17 @@ depending on the condition:
 
 - **The built-in WiFi shares the Bluetooth antenna** (Intel AX211 combo).
   Scanning must use the separate USB adapter, which the code enforces. In
-  `--test-mode` the internal WiFi stays on and connected, so all lab sessions
-  to date had the laptop's own WiFi traffic (channel 1) sharing the
-  Bluetooth antenna.
+  `--test-mode` the internal WiFi stays on and connected, so its traffic
+  shares the Bluetooth antenna.
 - **Corsano measurement plan.** The driver defaults to `HOSPITAL_MULTICOLOR`,
-  under which raw ACC is not recorded, and the watch has reported
-  `POWER_SAVING_MODE`. In the 2026-10-05 sessions ACC and stress never grew
-  and only BioZ did. Raw ACC needs `--plan HOSPITAL_RAW` added to the
-  `launch_cmd` (not yet done).
-- **Polar ECG/RR in the lab sessions is mains hum, not physiology,** when the
-  strap isn't on skin. Only link-level metrics are valid there.
+  under which raw ACC is not recorded, so the `launch_cmd` sets
+  `--plan HOSPITAL_RAW`.
+- **The sensors were not worn.** Polar ECG/RR from a strap that isn't on
+  skin is mains hum, not physiology; only link-level metrics are valid.
 - **The nRF sniffer covers advertising channels only;** it can't follow the
   data connection.
 - **On reconnect, BlueZ uses its cached GATT table,** so btmon shows no UUIDs.
   Polar parsing falls back to fixed ATT handles (0x0032 PMD, 0x0010 HR).
-
-**About older data:**
-
-- **`_afh.csv` before 2026-10-02 can contain wrong maps and RSSI.** The
-  channel-map reader sometimes logged an unrelated event as the reply. This
-  explains all 149 "wider than forced" samples in sessions 09-24 to 10-01;
-  the controller's real reply was always the forced set or "link down". For
-  those sessions, take maps and RSSI from the `.btsnoop`.
-- **Run order before 2026-10-06:** row 3 ran in fixed order, and each
-  `--resume` re-measured the 100% load (so one session can mix load scales).
-  Use `induced_load_mbps`.
 
 ## 11. Gym visit (gym_session.py)
 
@@ -556,29 +537,42 @@ check, or run it as a separate short block.
 - No patient data is collected, so no ethics review should be needed for
   the stand-mounted runs, but confirm with the facility. An on-body add-on
   needs ethics clearance and is kept separate.
-- **Privacy (GDPR / Swiss FADP):**
-  - Background monitor: Bluetooth advertiser addresses and WiFi BSSIDs are
-    only held in memory to count distinct ones; only counts are written. The
-    sniffer streams through a FIFO (no pcap) and nrfutil runs at `error`
-    log level (at `info` it would log addresses and names). The per-run
-    sniffer capture is off in the gym.
-  - Sensor runs: while a driver looks for its sensor, btmon records every
-    advertiser the laptop hears, and the Polar driver prints every scanned
-    device with its name to `_driver.log` every 5 s if it can't find the
-    sensor. `privacy_scrub.py` runs after every gym run: it filters each
-    btsnoop to our own devices, checks the parsed metrics are identical and
-    btmon shows no foreign address, then replaces the raw file; device
-    lists in driver logs become a count. The drivers themselves are not
-    changed.
-  - Older sessions recorded outside the chamber (lab, dry runs) contain
-    colleagues' devices too: `python3 scripts/privacy_scrub.py captures/<session>`.
+
+### Privacy
+
+Nearby people's devices (GDPR / Swiss FADP) are handled as follows:
+
+- **Background monitor:** Bluetooth advertiser addresses and WiFi BSSIDs are
+  only held in memory to count distinct ones; only counts are written. The
+  sniffer streams through a FIFO (no pcap) and nrfutil runs at `error` log
+  level (at `info` it would log addresses and names). The per-run sniffer
+  capture is off in the gym.
+- **Sensor runs:** while a driver looks for its sensor, BlueZ scans, so btmon
+  briefly records every advertiser the laptop hears, and the Polar driver
+  prints every scanned device with its name to `_driver.log` every 5 s if it
+  can't find the sensor. `privacy_scrub.py` runs after every gym run: it
+  filters each btsnoop to our own devices, checks the parsed metrics are
+  identical and btmon shows no foreign address, then replaces the raw file;
+  device lists in driver logs become a count. For sessions recorded outside
+  the chamber without `gym_session.py`, run it by hand:
+  `python3 scripts/privacy_scrub.py captures/<session>`.
+- **session.log** keeps DEBUG lines only from this project's own loggers
+  (`session_lib/logs.py`): the Bluetooth libraries' DEBUG output lists
+  nearby devices.
+- **People:** `people.csv` holds headcounts only.
+- **Publication:** `export_dataset.py` builds the published copy and also
+  replaces researcher identifiers (home paths, hostname, the laptop's
+  Bluetooth address, the sniffer's serial number).
 
 ## 12. Other tools
 
 | Tool | Purpose |
 |---|---|
 | `log_environment.py` | Writes the same software/firmware snapshot as a session start, without running anything: `python3 scripts/log_environment.py [OUT_DIR]`. |
-| `reconnect_regression.py` | Tests reconnects outside the chamber, with no WiFi load. It forces link drops (`--drop block`, the default, via `bluetoothctl block`) and measures how long until the link and the **data** come back. Avoid `--drop rfkill` on this laptop: the AX211 hung once and needed a reboot. |
-| `analyze_session.py` | Analyzes one or more session folders (or .zip exports): a `report.md` with sanity checks and headline numbers, per-run and per-condition tables, and provenance in `meta.json`. |
+| `reconnect_regression.py` | Tests reconnects outside the chamber, with no WiFi load. It forces link drops (`--drop block`, the default, via `bluetoothctl block`) and measures how long until the link and the **data** come back. Avoid `--drop rfkill`: it shuts the controller down on every block, which can hang it until a reboot. |
+| `analyze_session.py` | Analyzes one or more session folders (or .zip exports): a `report.md` with sanity checks and headline numbers, per-run and per-condition tables, and provenance in `meta.json`. `--pool` adds the pooled analyses and the paper figures. |
+| `chamber_session_abba.py`, `run_polar_abba.sh` | A copy of `chamber_session.py` with `--replicates` / `--rep-start` / `--no-bracket`, and the script that ran chamber session 2 with it (Polar H10, rows 3, 5 and 8 in ABBA order, one session folder). |
+| `privacy_scrub.py` | Removes bystanders' Bluetooth addresses and names from a session's btsnoop files and driver logs (see [Privacy](#privacy)). |
+| `corsano_data_age.py` | Corsano BioZ data age from the HCI captures: `python3 scripts/corsano_data_age.py CAPTURE_DIR PER_RUN_CSV OUT_CSV`. |
 | `export_dataset.py` | Builds the published dataset (one zip per session) from a cleaned copy of `captures/`, which is never modified: bystanders' addresses and names removed from `session.log`, researcher identifiers replaced, every change checked against the analysis. Needs ROS 2 and `$ROS_WS` sourced. |
 | `paper_figures/` | Paper-only figures and tables, read from `analysis/`: `fig_gym_chamber.py` (gym vs chamber M'(100 ms) by people present: `python3 scripts/paper_figures/fig_gym_chamber.py OUT_DIR`), `fig_confinement.py` (channel confinement diagram; `FIG_OUT=OUT_DIR`) and `tab_s_gym_runs.py` (supplementary per-run gym table). |

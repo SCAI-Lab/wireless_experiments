@@ -17,6 +17,9 @@ The sessions in captures/ are never modified. Each one is copied to
   - *.btsnoop: the laptop's Bluetooth address (same-length byte swap; the
     format has no checksums). Checked: parse_capture_file gives the same
     metrics.
+  - *.pcap (nRF sniffer): the laptop's address in CONNECT_IND packets, same
+    swap. Checked: tshark gives the same values for every field
+    sniffer_metrics reads.
   - rosbags: /rosout's `file` field (driver source paths under /home/<user>).
     Checked: every message keeps its topic, receive time and bytes, except
     those /rosout fields.
@@ -36,12 +39,13 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
-from analyze_session import parse_log
+from analyze_session import SNIFF_FIELDS, parse_log
 from privacy_scrub import MAC_RE
 from session_lib import load_config
 from session_lib.btmon_parse import parse_capture_file
@@ -188,6 +192,15 @@ def export_session(src, staging, cfg):
             n_bt += 1
     log.append(f"btsnoop: laptop address replaced in {n_bt} files, metrics identical")
 
+    n_pcap = 0
+    for p in sorted(dst.glob("*.pcap")):
+        raw = p.read_bytes()
+        if old in raw:
+            p.write_bytes(raw.replace(old, new_b))
+            assert _sniffer_fields(src / p.name) == _sniffer_fields(p), f"{p}: sniffer fields changed"
+            n_pcap += 1
+    log.append(f"pcap: laptop address replaced in {n_pcap} files, analysed fields identical")
+
     n_bags = n_msgs = 0
     for bag in sorted(dst.glob("*_rosbag")):
         raw = b"".join(f.read_bytes() for f in bag.glob("*.mcap"))
@@ -202,6 +215,14 @@ def export_session(src, staging, cfg):
         n_bags += 1
     log.append(f"rosbags: /rosout paths replaced in {n_msgs} messages in {n_bags} bags, all else identical")
     return dst, log
+
+
+def _sniffer_fields(pcap):
+    """tshark's output for every field analyze_session.sniffer_metrics reads."""
+    cmd = ["tshark", "-r", str(pcap), "-T", "fields", "-E", "separator=\t", "-E", "occurrence=f"]
+    for f in SNIFF_FIELDS:
+        cmd += ["-e", f]
+    return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
 
 def _parse_text(text):
