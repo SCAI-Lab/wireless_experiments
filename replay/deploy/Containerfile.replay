@@ -1,6 +1,5 @@
 # Replay container for the SLURM node (no ROS 2 on the host): ROS 2 Jazzy,
-# healthcare_msgs (local working copy: it has message types the chamber bags
-# use that are not on GitHub yet), the MedWear bridge, the replay/analysis
+# healthcare_msgs (the pinned commit), the MedWear bridge, the replay/analysis
 # scripts, and a Docker CLI that talks to the host's rootless Podman socket
 # (container stats, API logs and the store check go through it).
 #

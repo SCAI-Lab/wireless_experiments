@@ -21,15 +21,11 @@ What this script does NOT automate (still manual, by design):
 
 Devices run one at a time, fully (all of rows 1-3 for device A, then all of
 rows 1-3 for device B), rather than interleaved row-by-row. This matches how
-a single patient's sensor is actually used in the field (one device active
-at a time) and, together with the explicit BlueZ disconnect after every run
-(see disconnect_ble_device in session_lib/drivers.py), avoids a confirmed bug: a
-"finished" device's BLE connection can silently persist in the background
-(BlueZ auto-reconnects bonded devices) and contend with whatever device is
-tested next on the single shared radio -- this was traced to real ~45s
-periodic disconnects on a device that wasn't even under test. The trade-off
-is that Row 2's AP/Pi setup and Row 3's generic-BLE-peripheral pause each
-happen once per device instead of once total.
+a single patient's sensor is used (one device active at a time) and,
+together with the explicit BlueZ disconnect after every run (see
+disconnect_ble_device in session_lib/drivers.py), keeps a finished device's
+background reconnect off the shared radio. Row 2's AP/Pi setup and Row 3's
+generic-BLE-peripheral pause therefore happen once per device.
 
 Each run gets its own timestamped session directory under
 config.yaml's session.output_dir (e.g. <output_dir>/20260918_121724/),
@@ -121,16 +117,11 @@ from session_lib import (
 def run_iperf_background(iperf_cfg, duration_s, bitrate):
     """SSH into the Pi and run iperf3 at the given bitrate as a background
     subprocess for duration_s. Requests JSON output (-J) with stdout captured
-    (not DEVNULL) so the actual achieved throughput can be confirmed after
-    the run -- otherwise we're only ever confirming the ssh call was made,
-    never that real traffic was actually induced on the link.
+    so the achieved throughput can be confirmed after the run.
 
-    UDP (-u) with a fixed payload size (-l), not TCP: TCP backs off/adapts
-    under loss, which is exactly the wrong behavior for an "offered load"
-    independent variable -- we want the requested bitrate actually sent
-    regardless of loss, with loss itself reported as its own KPI (see
-    parse_iperf_udp_stats) rather than silently absorbed by TCP's
-    congestion control."""
+    UDP (-u) with a fixed payload size (-l), not TCP: the requested bitrate
+    is sent regardless of loss (an offered load), and loss is reported
+    separately (see parse_iperf_udp_stats)."""
     ssh_target = f"{iperf_cfg['pi_user']}@{iperf_cfg['pi_host']}"
     payload = iperf_cfg.get("udp_payload_bytes", 1200)
     remote_cmd = (
@@ -149,8 +140,7 @@ def run_iperf_background(iperf_cfg, duration_s, bitrate):
 def parse_iperf_json(stdout_text):
     """Extract the actual achieved bitrate (Mbit/s) from a completed
     `iperf3 -u -J` run's captured stdout. Returns None if it can't be parsed
-    -- e.g. the ssh call or iperf3 itself failed silently, which previously
-    we had no way to detect at all."""
+    (e.g. the ssh call or iperf3 itself failed)."""
     if not stdout_text:
         return None
     try:
@@ -198,10 +188,8 @@ def bitrate_str_to_mbps(bitrate):
 
 def _log_controller_info(controller, session_dir):
     """Log this session's Bluetooth controller model/firmware once, into
-    both session.log and a small standalone file -- so the write-up can
-    cite what hardware/firmware the results characterize (external review
-    point: results partly characterize the central's own controller and
-    AFH implementation, not just the wearables)."""
+    both session.log and a small standalone file: the results also depend
+    on the central's own controller and AFH implementation."""
     try:
         result = subprocess.run(
             ["hciconfig", "-a", controller], capture_output=True, text=True, timeout=5
@@ -292,16 +280,10 @@ def run_test2_duty_cycle(cfg, session_dir, session_id, device, completed=frozens
             "this should have been derived/validated in main() before "
             "run_test2_duty_cycle was called"
         )
-    # Randomize this device's own (duty level, replicate) order each
-    # session, seeded from (session_id, device) so it's reproducible/
-    # auditable rather than opaque -- avoids confounding duty level with
-    # time/thermal/battery drift (external review point: order was always a
-    # fixed 0 -> 25 -> 75). Shuffling the FULL list of (level, rep) pairs,
-    # not just the level order with reps still run back-to-back per level --
-    # 3 identical-condition reps in a row would still leave each level's
-    # exposure clustered in time, only partially addressing the confound.
-    # Device order itself (Corsano fully before Polar) stays fixed -- see
-    # the comment at the top of this file for why.
+    # Randomize this device's (duty level, replicate) order, seeded from
+    # (session_id, device) so it's reproducible, to avoid confounding duty
+    # level with time/thermal/battery drift. The FULL list of (level, rep)
+    # pairs is shuffled. Device order stays fixed (see the top of this file).
     rng = random.Random(f"{session_id}:{device['name']}:row2")
     pairs = [
         (duty, rep)
@@ -367,11 +349,8 @@ _FORCED_CHANNEL_DUTY_BY_CONDITION = {
 
 
 def _forced_channel_duty_pct(condition):
-    """Map a row3 condition name to its duty percentage. Covers the
-    original binary no_load/max_load names plus dose-response conditions
-    named forced_channel_duty<NN>pct (e.g. forced_channel_duty25pct),
-    added 2026-09-23 to have intermediate-load data instead of just the
-    two endpoints."""
+    """Map a row3 condition name to its duty percentage: no_load/max_load,
+    and forced_channel_duty<NN>pct (e.g. forced_channel_duty25pct)."""
     if condition in _FORCED_CHANNEL_DUTY_BY_CONDITION:
         return _FORCED_CHANNEL_DUTY_BY_CONDITION[condition]
     m = re.fullmatch(r"forced_channel_duty(\d+)pct", condition)
@@ -437,10 +416,8 @@ def run_test3_forced_channel(
         extra["forced_channels"] = FORCED_CHANNEL_RANGE
         return extra
 
-    # Shuffled (condition, rep) order, seeded per session/device -- same
-    # reasoning as Row 2/5: run in config order, load level was confounded
-    # with time/thermal/battery drift across the block (review 2026-10-06).
-    # Deterministic, so a --resume reproduces the same order.
+    # Shuffled (condition, rep) order, seeded per session/device, as in
+    # Row 2/5. Deterministic, so a --resume reproduces the same order.
     conditions = [c for c in r["conditions"] if _condition_selected(cfg, c)]
     rng = random.Random(f"{session_id}:{device['name']}:row3")
     pairs = [
@@ -494,12 +471,8 @@ def run_test3_forced_channel(
             extra=_extra(0),
             retry_on_fail=False,
         )
-    # Block-level safety net, in addition to _attempt_run's own per-run
-    # reset: if the LAST run in this block crashed/was interrupted before
-    # its own reset, the classification would otherwise stay forced on the
-    # controller (persistent hardware state) until whatever runs next
-    # happens to be AFH-free and catches it via its own proactive reset --
-    # reset here too so nothing downstream depends on that.
+    # Block-level reset, in addition to _attempt_run's per-run reset, in
+    # case the last run in this block was interrupted before its own.
     if not reset_host_channel_classification():
         log.warning(
             "  -> could not confirm the channel classification was reset "
@@ -655,14 +628,9 @@ def run_test4_endurance(cfg, session_dir, session_id, device, completed=frozense
 def run_test8_headroom_saturation(
     cfg, session_dir, session_id, device, completed=frozenset()
 ):
-    """Added 2026-10-06 (opt-in at first; part of --row all since
-    2026-10-07, after Row 5): Row 5's
-    headroom sweep repeated at 100% load for a few k values, to test whether
-    Row 5's 75% result holds at the top of the load range -- e.g. whether
-    the Polar's "fully recovered from k=2" cliff stays at k=2. Same masks
-    (channel_masks) and same 100% bitrate as Row 2's duty100pct. Labelled
-    row8 because row6/row7 already name other runs in existing data
-    (chamber contention, the gym visit, the scan-interference test)."""
+    """Row 8 (part of --row all, after Row 5): Row 5's headroom sweep
+    repeated at 100% load for a few k values. Same masks (channel_masks)
+    and same 100% bitrate as Row 2's duty100pct."""
     r = cfg.get("row8_headroom_saturation")
     if not r or not r.get("enabled"):
         log.info(f"Row 8 (headroom at 100%) [{device['name']}]: disabled, skipping")

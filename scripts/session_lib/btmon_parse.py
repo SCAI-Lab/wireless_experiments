@@ -40,44 +40,23 @@ from .polar import (
 from .corsano import compute_corsano_completeness
 
 
-# Every run ends with the script itself calling stop_driver(), which sends
-# SIGINT and triggers the driver's own graceful BLE disconnect -- confirmed
-# against a real capture, where stop_driver was logged ~247s into a planned
-# 240s run and the only Disconnect Complete event landed at ~251.6s, with
-# stop_btmon following a few seconds after that. That expected teardown
-# disconnect must not count as an instability, or every successful baseline
-# run would fail this check. Only a disconnect well before the capture ends
-# (i.e. not in this trailing window) counts as a real, unexpected drop.
-#
-# This used to be a flat 20s for every run regardless of the device's own
-# negotiated supervision timeout -- an arbitrary constant an external review
-# flagged as needing justification. It's now a FLOOR: the actual grace
-# window (see _grace_window_s below) is max(this floor, 2x the run's own
-# negotiated supervision timeout), so a device negotiating a long timeout
-# doesn't get an unfairly short grace window relative to how long BlueZ
-# itself would wait before giving up on a real drop.
+# Every run ends with stop_driver(), whose SIGINT makes the driver disconnect
+# gracefully; that teardown disconnect must not count as an unexpected drop.
+# Floor of the grace window: see _grace_window_s.
 SHUTDOWN_GRACE_S = 20
 
-# Symmetric to SHUTDOWN_GRACE_S, but at the start: confirmed on a real,
-# fully-isolated Polar_H10 capture (Corsano explicitly disconnected from
-# BlueZ before this test even started, so no cross-device contamination) --
-# the driver connects, our OWN host issues an explicit disconnect command
-# (@ MGMT Command: Disconnect, not the peripheral dropping itself) at ~12s,
-# reconnects, does the same thing again at ~17s, reconnects a third time,
-# and is then rock-solid for the rest of the run. This looks like the
-# polar_ros2 driver's own connect/probe/reconnect startup sequence, not
-# instability -- the same category of "expected, not a real failure" as the
-# end-of-run teardown above, just at the other end of the capture. Also a
-# floor now, see _grace_window_s.
+# Symmetric to SHUTDOWN_GRACE_S, at the start: the polar_ros2 driver's
+# connect/probe/reconnect startup sequence disconnects from the host side
+# (MGMT Disconnect) once or twice before streaming. Also a floor, see
+# _grace_window_s.
 STARTUP_GRACE_S = 20
 
 
 def _grace_window_s(initial_timeout_ms):
     """The startup/shutdown grace window for one run: max(the 20s floor
-    above, 2x this run's own negotiated supervision timeout) -- "should have
-    reconnected by now" is naturally scaled to how long BlueZ itself would
-    wait before declaring the link dead, not an arbitrary flat constant.
-    Falls back to the floor if no successful connection (and thus no
+    above, 2x this run's own negotiated supervision timeout), i.e. scaled to
+    how long BlueZ waits before declaring the link dead. Falls back to the
+    floor if no successful connection (and thus no
     timeout) was ever recorded."""
     if not initial_timeout_ms:
         return SHUTDOWN_GRACE_S
@@ -94,11 +73,8 @@ def _jitter_percentile(sorted_diffs_ms, p):
 
 def compute_jitter_percentiles(rx_timestamps_s):
     """Inter-arrival interval percentiles (ms) between consecutive ACL Data RX
-    packets on the connection. This is NOT full end-to-end pipeline latency
-    (sensor -> BLE -> gateway -> ROS2 -> MQTT -> actuation) -- that needs
-    timestamps at every hop, which btmon alone can't provide. It's the
-    right-scoped p50/p95/p99/p99.9 metric for this BLE-connection-level
-    validation test: how consistent the over-the-air data delivery timing is."""
+    packets on the connection (p50/p95/p99/p99.9): how consistent the
+    over-the-air delivery timing is, not end-to-end latency."""
     diffs_ms = sorted(
         (b - a) * 1000.0 for a, b in zip(rx_timestamps_s, rx_timestamps_s[1:])
     )
@@ -114,20 +90,13 @@ def compute_jitter_percentiles(rx_timestamps_s):
 def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
     """Scan btmon -r output text for connection and disconnection events.
     Returns a dict summary, including how much of the capture was actually
-    connected -- a driver process staying alive says nothing about whether
-    the underlying BLE link is still up, so this is tracked independently.
+    connected (a live driver process says nothing about the BLE link).
 
     mac_address, when given, restricts everything (connects, disconnects,
-    RX/jitter) to that device's own peer address. btmon on a shared adapter
-    captures ALL Bluetooth activity, not just this test's device, and HCI
-    handle numbers are assigned dynamically by the controller -- NOT fixed
-    per device (confirmed on real hardware: the same MAC got handle 2048 in
-    one session and 2049 in another) -- so without this filter, a stray
-    connection left over from a different device/test gets silently
-    attributed to whatever device this capture is nominally for. This was
-    confirmed as the actual cause of repeated "unexpected disconnect"
-    failures previously misattributed to Polar_H10: the disconnects were
-    really Corsano's own stray background reconnects."""
+    RX/jitter) to that device's own peer address: btmon on a shared adapter
+    captures all Bluetooth activity, and HCI handles are assigned
+    dynamically, so another device's connection would otherwise be
+    attributed to this capture's device."""
     expected_mac = mac_address.upper() if mac_address else None
     lines = text.splitlines()
     events = (
@@ -137,14 +106,8 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
     acl_rx = []  # list of (handle, timestamp_s) for every ACL Data RX packet
     mtu_candidates = []  # list of (handle, mtu_value), in file order
     pmd_hex_frames = []  # list of (handle, hex_data, host_ts_s) -- Polar PMD ACC/ECG
-    # notifications. host_ts_s (btmon's own capture-relative clock, same
-    # domain as connection-complete events' timestamps) is carried
-    # alongside each frame so the real, per-run delay between "connected"
-    # and "PMD data actually started arriving" can be measured directly
-    # from this capture -- not guessed/assumed. This is deliberately NOT
-    # the sensor's own embedded per-sample timestamp used for completeness
-    # (a different, device-side clock, only meaningful relative to other
-    # PMD frames) -- see _first_pmd_frame_host_ts.
+    # notifications; host_ts_s is btmon's capture-relative clock (as for
+    # connection events), not the sensor's embedded timestamp.
     hr_hex_frames = (
         []
     )  # list of (handle, hex_data) -- standard HR (0x2A37) notifications
@@ -172,13 +135,8 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
             timeout_m = TIMEOUT_RE.search(window)
             handle_m = HANDLE_RE.search(window)
             # "LE Connection Update Complete" reports the peer as
-            # "Handle: 2048 Address: AA:BB:..." (HANDLE_ADDRESS_RE), NOT
-            # "Peer address: ..." (PEER_ADDRESS_RE) -- that's a Connection
-            # Complete-only field. Without this fallback, every update
-            # event's peer_address came back None and got silently dropped
-            # by the expected_mac filter below, so a later interval change
-            # (e.g. 60ms -> 45ms mid-run) never showed up in num_updates/
-            # update_intervals even though it's right there in the capture.
+            # "Handle: 2048 Address: AA:BB:..." (HANDLE_ADDRESS_RE), not
+            # "Peer address: ..." (PEER_ADDRESS_RE, Connection Complete only).
             peer_m = PEER_ADDRESS_RE.search(window) or HANDLE_ADDRESS_RE.search(window)
             events.append(
                 {
@@ -241,10 +199,8 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
         events = [e for e in events if e["peer_address"] == expected_mac]
         disconnects = [d for d in disconnects if d["address"] == expected_mac]
 
-    # Only trust events that actually succeeded -- a timed-out or rejected
-    # attempt (e.g. "Status: Unknown Connection Identifier") has no real
-    # connection interval, and counting it would misreport the link's
-    # actual behavior.
+    # Only events that succeeded: a timed-out or rejected attempt has no
+    # connection interval.
     successes = [e for e in events if e["status"] == "Success"]
     initial = next((e for e in successes if e["type"] == "complete"), None)
     updates = [e for e in successes if e["type"] == "update"]
@@ -259,9 +215,7 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
     rx_timestamps = sorted(ts for handle, ts in acl_rx if handle in connected_handles)
     jitter = compute_jitter_percentiles(rx_timestamps)
 
-    # Same handle-scoping as above: an MTU value logged for a different,
-    # unrelated connection on the shared adapter shouldn't be reported as
-    # this device's negotiated MTU.
+    # Same handle-scoping for the MTU.
     mtu = next(
         (v for h, v in mtu_candidates if h in connected_handles),
         None,
@@ -287,10 +241,8 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
     ]
     scoped_hr_hex = [h for handle, h in hr_hex_frames if handle in connected_handles]
     # Completeness is measured against the planned duration, so count only
-    # frames that arrived inside it (from this device's first connection).
-    # When the H10's PMD stream starts in ~3.5 s instead of ~32 s, it keeps
-    # streaming past the planned end until teardown, and those extra frames
-    # pushed 20261006_000828 row5 headroom_k4_duty75pct rep3 to 100.87%.
+    # frames that arrived inside it (from this device's first connection);
+    # the stream continues past the planned end until teardown.
     window_pmd_hex, window_connection_ids = scoped_pmd_hex, pmd_connection_ids
     try:
         planned_s = float(planned_duration_s)
@@ -315,15 +267,10 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
         window_pmd_hex, planned_duration_s, window_connection_ids
     )
 
-    # Tally by HCI disconnect reason -- across ALL recorded disconnects for
-    # this device (not just unexpected_disconnects below, which excludes
-    # the startup/shutdown grace window): the manuscript's own Table
-    # tab:forced counts every 0x3E/0x08 event, including ones during
-    # reconnection churn. Named after the three reasons the manuscript's
-    # Methods section explicitly tracks (supervision timeout 0x08,
-    # connection-failed-to-establish 0x3E, local host termination 0x16);
-    # anything else falls into reason_other rather than being silently
-    # dropped.
+    # Tally by HCI disconnect reason, across ALL recorded disconnects for
+    # this device (unexpected_disconnects below excludes the grace windows):
+    # supervision timeout 0x08, connection failed to establish 0x3E, local
+    # host termination 0x16, anything else in reason_other.
     _REASON_HEX_NAMES = {
         "08": "supervision_timeout",
         "3e": "establishment_failed",
@@ -337,8 +284,7 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
 
     # Exclude the expected end-of-run teardown disconnect (see
     # SHUTDOWN_GRACE_S / _grace_window_s) from the count of real, unexpected
-    # drops. grace_s is scaled to this run's own negotiated supervision
-    # timeout rather than a flat constant -- see _grace_window_s.
+    # drops.
     grace_s = _grace_window_s(initial["timeout_ms"] if initial else None)
     unexpected_disconnects = [
         d
@@ -352,8 +298,7 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
 
     # Reconstruct a connected/disconnected timeline from successful connects
     # and disconnects, in chronological order, so a link that drops mid-run
-    # and never reconnects is visible instead of implicitly reading as "up
-    # the whole time" just because the run as a whole was marked PASSED.
+    # and never reconnects is visible.
     timeline = sorted(
         [
             {"kind": "connect", "ts": e["timestamp_s"]}
@@ -379,9 +324,8 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
         # Still connected when the capture ended.
         connected_duration_s += last_ts - connected_since
 
-    # Real, per-run measured delay between "connected" and "ECG data
-    # actually started arriving" -- both timestamps on btmon's own host
-    # clock, no cross-clock-domain guessing. See _first_ecg_frame_host_ts.
+    # Delay between "connected" and the first ECG frame, both on btmon's
+    # host clock. See _first_ecg_frame_host_ts.
     first_connect_ts = next(
         (ev["ts"] for ev in timeline if ev["kind"] == "connect"), None
     )
@@ -434,11 +378,8 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
     _tally_encryption(enc_block)
 
     hr_completeness = compute_hr_completeness(scoped_hr_hex, connected_duration_s)
-    # Not MAC/handle-scoped like everything else above -- Corsano's WRITE_CHAR/
-    # FILE_RX_CHAR/COMMAND_RX_CHAR UUIDs are specific to its own proprietary
-    # service, so there's no cross-device contamination risk the way generic
-    # ACL handles have, as long as only one Corsano-protocol device is ever
-    # on the shared radio at once (true for this project).
+    # Not MAC/handle-scoped: Corsano's WRITE_CHAR/FILE_RX_CHAR/COMMAND_RX_CHAR
+    # belong to its proprietary service (assumes one Corsano on the radio).
     corsano_completeness = compute_corsano_completeness(text)
 
     return {
@@ -473,34 +414,14 @@ def parse_btmon_text(text, mac_address=None, planned_duration_s=None):
 def parse_capture_file(capture_path, mac_address=None, planned_duration_s=None):
     """Run `btmon -r <file>` and parse its text output.
 
-    Sample completeness (see compute_acc_completeness/compute_ecg_
-    completeness/compute_hr_completeness in parse_btmon_text) is
-    implemented for Polar H10 only -- its PMD accelerometer/ECG frames and
-    standard Heart Rate Measurement notifications all embed enough
-    information (the sensor's own timestamp/RR-interval data) to detect
-    real dropped samples, not just gaps in our own RX timing. ECG
-    completeness was originally computed from this run's own rosbag
-    instead (reading the driver's already-decoded /polar_ecg topic) --
-    replaced 2026-09-25 with this direct HCI decode once it became clear
-    the driver computes the sensor's own per-sample timestamp internally
-    (PolarH10.py's ecg_data_conv) but discards it before publishing,
-    stamping each ROS message with host wall-clock time instead. Decoding
-    the raw PMD notification ourselves (_parse_polar_ecg_frame) recovers
-    that sensor-clock information directly, consistent with how ACC
-    completeness already works, and needs no rosbag at all. Corsano's
-    payload format isn't documented anywhere in this codebase, so the same
-    claim can't be made for it: for Corsano, "no unexpected disconnects
-    and full jitter percentiles" only supports "no gaps observed," not "no
-    delivered samples were lost" -- state that distinction explicitly in
-    any write-up that includes Corsano."""
-    # errors="replace": same reasoning as _btmon_watch_for_handle -- a real
-    # capture's raw payload bytes can be invalid UTF-8, and the default
-    # strict decoding crashed do_parse entirely on a real session
-    # (2026-09-24, UnicodeDecodeError surfacing as a misleading "Config
-    # error" since it's a ValueError subclass). parse_btmon_text only
-    # matches plain-ASCII patterns, so a replaced byte elsewhere doesn't
-    # affect parsing -- losing the whole session's results.csv would be far
-    # worse than a mangled byte in text that isn't parsed anyway.
+    Sample completeness (compute_acc_completeness/compute_ecg_completeness/
+    compute_hr_completeness) is implemented for the Polar H10 only: its PMD
+    frames and HR notifications carry the sensor's own timestamps or
+    RR-intervals, which reveal dropped samples, not just gaps in RX timing.
+    For the Corsano, "no unexpected disconnects" only supports "no gaps
+    observed"."""
+    # errors="replace": payload bytes can be invalid UTF-8; parse_btmon_text
+    # only matches ASCII patterns.
     result = subprocess.run(
         ["btmon", "-r", str(capture_path)],
         capture_output=True,

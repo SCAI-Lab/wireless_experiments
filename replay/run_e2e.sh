@@ -47,8 +47,7 @@ set +u
 set -u
 
 # The API's /data/batch limit stays at the production default (300/minute per
-# user): the busiest minute of the replay used 225 requests. Recreate med-api
-# if an earlier experiment left a raised BATCH_RATE_LIMIT in place.
+# user). Recreate med-api if a raised BATCH_RATE_LIMIT is in place.
 # (Skipped when the stack is managed externally, e.g. by the SLURM job.)
 if [ -z "${E2E_MANAGED_STACK:-}" ] && \
    [ "$(docker exec medwear-api printenv BATCH_RATE_LIMIT 2>/dev/null)" != "300/minute" ]; then

@@ -78,13 +78,11 @@ env[:] = [e for e in env if not str(e).startswith("BATCH_RATE_LIMIT")] + ["BATCH
 
 # No container DNS. Rootless Podman serves names on a network with
 # aardvark-dns, which systemd starts in the user's slice, outside the SLURM
-# job and under the node's shared user.slice CPU cap: when other users are
-# logged in, lookups between the containers time out (2026-10-19, gym run:
-# nginx "medwear-api could not be resolved", slow commits, 502/429). Instead,
-# each service gets a fixed address and every container an /etc/hosts entry
-# for all service and container names; the network is created without DNS, so
-# no aardvark-dns runs. Same bridge topology, ports and configuration as before.
-# nginx (an unpinned nginx:alpine, 1.31 on the node) resolves proxy_pass
+# job and under the node's shared user.slice CPU cap, where lookups between
+# the containers can time out. Instead, each service gets a fixed address and
+# every container an /etc/hosts entry for all service and container names;
+# the network is created without DNS, so no aardvark-dns runs.
+# nginx resolves proxy_pass
 # hostnames at request time through its own resolver, which reads
 # resolv.conf, not /etc/hosts. So the stack also gets its own DNS server as a
 # container (dnsmasq, inside the job like the rest): it answers only the

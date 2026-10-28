@@ -12,9 +12,7 @@ from pathlib import Path
 from .logs import log
 
 # nl80211 allows one scan in flight per radio, and the QBSS and channel-
-# occupancy pollers scan the same USB adapter from separate threads. Unlocked,
-# they collided 100 times in 20261006_000828 (57 occupancy + 43 QBSS scans
-# lost to "Device or resource busy").
+# occupancy pollers scan the same USB adapter from separate threads.
 _scan_locks = {}
 _scan_locks_guard = threading.Lock()
 
@@ -32,17 +30,11 @@ def _iw_scan(iface):
 
 def _qbss_iface_is_safe(iface):
     """Refuse to scan from an interface that's likely sharing a physical
-    radio/antenna with the Bluetooth controller under test. Confirmed by
-    direct testing on 2026-09-22: on this machine, wlp0s20f3 (iwlwifi
-    driver, Intel Meteor Lake PCH CNVi WiFi) and hci0 (Intel AX211
-    Bluetooth) are the SAME physical combo module despite enumerating on
-    different buses (PCIe vs USB) -- scanning from wlp0s20f3 mid-run would
-    force WiFi/BT antenna time-sharing and perturb the very BLE link being
-    measured, which would be worse than collecting no QBSS data at all.
-    Heuristic: refuses any iface using the iwlwifi driver, since virtually
-    all modern Intel WiFi ships as a CNVi combo card paired with Bluetooth
-    on the same module. A genuinely separate USB WiFi dongle (ath9k_htc,
-    rt2800usb, rtl8xxxu, etc.) is safe."""
+    radio/antenna with the Bluetooth controller under test (scanning from it
+    would make WiFi and BLE time-share the antenna). Heuristic: refuses any
+    iface using the iwlwifi driver (Intel CNVi WiFi/Bluetooth combo cards).
+    A separate USB WiFi dongle (ath9k_htc, rt2800usb, rtl8xxxu, etc.) is
+    safe."""
     driver_path = Path(f"/sys/class/net/{iface}/device/driver")
     if not driver_path.exists():
         return False  # can't verify -- fail closed, not "assume safe"
@@ -55,13 +47,10 @@ def _qbss_iface_is_safe(iface):
 
 def log_wifi_rfkill_state(session_dir):
     """Best-effort: dump `rfkill list` (every Bluetooth/WiFi radio's soft/
-    hard block state) into a session-level file, same pattern as
-    _log_controller_info's controller_info.txt -- so a write-up can state
-    whether the laptop's own WiFi was active during a session. The internal
-    radio shares a physical antenna with the Bluetooth controller under
-    test (see _qbss_iface_is_safe), so its on/off state is itself part of
-    the RF conditions the results characterize. Read-only: always runs,
-    regardless of test_mode or disable_internal_wifi.enabled."""
+    hard block state) into a session-level file, to record whether the
+    laptop's own WiFi (which shares the Bluetooth antenna) was active.
+    Read-only: always runs, regardless of test_mode or
+    disable_internal_wifi.enabled."""
     try:
         result = subprocess.run(
             ["rfkill", "list"], capture_output=True, text=True, timeout=5
@@ -95,10 +84,9 @@ def _find_internal_wifi_iface():
 
 def _rfkill_id_for_iface(iface):
     """Find iface's OWN rfkill device id via its phy80211 name, matched
-    against `rfkill --json`'s per-device "device" field -- deliberately
-    NOT `rfkill block wifi`/wlan-type, which would also block a separate,
-    safe USB WiFi adapter (used for qbss_iface/ambient_scan.iface) sharing
-    the same "wlan" rfkill type. Returns None on any failure (missing
+    against `rfkill --json`'s per-device "device" field (not the wlan type,
+    which would also block the separate USB WiFi adapter). Returns None on
+    any failure (missing
     tooling, no match) -- never raises."""
     try:
         phy_name = Path(f"/sys/class/net/{iface}/phy80211/name").read_text().strip()
@@ -120,17 +108,11 @@ def _rfkill_id_for_iface(iface):
 def disable_internal_wifi_for_session(test_mode):
     """Soft-block ONLY the internal iwlwifi-driven WiFi radio (see
     _find_internal_wifi_iface/_rfkill_id_for_iface) for the duration of a
-    real chamber session -- it shares a physical antenna with the
-    Bluetooth controller under test, so leaving it associated/idle-
-    scanning during a BLE run is an uncontrolled interference source the
-    results would otherwise silently absorb. A separate, safe USB WiFi
-    adapter is never touched -- this targets one specific rfkill id, never
-    `rfkill block wifi`.
+    session: it shares the antenna with the Bluetooth controller under
+    test. A separate USB WiFi adapter is never touched (one specific
+    rfkill id, never `rfkill block wifi`).
 
-    Skipped entirely under --test-mode: that mode is for trying the
-    pipeline out at a desk, not in the chamber, where killing the
-    operator's own internet is actively unhelpful and there's no
-    controlled RF environment to protect anyway.
+    Skipped under --test-mode.
 
     Returns the rfkill id that was blocked (pass to restore_internal_wifi
     when the session ends), or None if nothing was blocked -- test_mode,
@@ -199,19 +181,11 @@ def restore_internal_wifi(rfkill_id):
 
 def _autodetect_wifi_iface():
     """Find the one WiFi interface that's safe to use for QBSS/channel-
-    occupancy polling, instead of requiring its name to be hardcoded in
-    config.yaml -- a USB adapter's interface name (e.g. wlxc03a55a6e1bf,
-    the "wlx"+MAC predictable-naming scheme) is normally stable across
-    replugs/reboots on the SAME machine, but hardcoding it still means
-    config.yaml silently breaks on a different machine, after swapping
-    adapters, or if the naming scheme differs. Enumerates every interface
-    with a /sys/class/net/<iface>/wireless directory (i.e. an actual WiFi
-    interface, not a wired NIC or virtual device) and filters through the
-    same _qbss_iface_is_safe() driver check already used to reject the
-    laptop's built-in combo chip. Returns the interface name only if
-    EXACTLY one safe candidate exists -- 0 or 2+ is ambiguous, so this logs
-    why and returns None rather than guessing (same as the old "not
-    configured" path's behavior)."""
+    occupancy polling, instead of hardcoding its name in config.yaml.
+    Enumerates every interface with a /sys/class/net/<iface>/wireless
+    directory and filters through _qbss_iface_is_safe(). Returns the
+    interface name only if EXACTLY one safe candidate exists; otherwise
+    logs why and returns None."""
     net_dir = Path("/sys/class/net")
     if not net_dir.is_dir():
         return None
@@ -239,25 +213,13 @@ def _autodetect_wifi_iface():
 
 
 def _ensure_iface_unmanaged(iface):
-    """Best-effort: tell NetworkManager to stop managing iface, so ITS OWN
-    periodic background scans (fired even while the device is "managed,
-    disconnected") stop racing our own scheduled `iw scan` calls on the same
-    physical radio. nl80211 only allows one scan in flight per radio, so a
-    collision between NetworkManager's autoscan and ours fails with "Device
-    or resource busy" and silently drops that poll -- this is the QBSS
-    "third failure mode" documented in poll_qbss_channel_utilization below,
-    confirmed 2026-09-25 to recur session after session because NM re-scans
-    this adapter on its own, not just from one-off manual `iw scan` testing.
-    Confirmed live: back-to-back iw scans on this NM-managed, idle adapter
-    alternately failed with exactly this error; after `nmcli device set
-    <iface> managed no`, the same back-to-back test ran clean (5/5).
+    """Best-effort: tell NetworkManager to stop managing iface, so its own
+    background scans don't collide with our `iw scan` calls (nl80211 allows
+    one scan in flight per radio; the loser fails with "Device or resource
+    busy").
 
-    Runtime-only -- reverts to managed on reboot/NM restart -- so this is
-    called at the start of every session that uses iface, rather than
-    depending on a one-time host config change someone has to remember to
-    reapply. Never raises: if nmcli isn't installed or the call fails,
-    QBSS/occupancy polling just falls back to its pre-existing flakiness,
-    it doesn't get any worse."""
+    Runtime-only (reverts on reboot/NM restart), so called at the start of
+    every session that uses iface. Never raises."""
     try:
         result = subprocess.run(
             ["nmcli", "device", "set", iface, "managed", "no"],
@@ -283,48 +245,15 @@ def _ensure_iface_unmanaged(iface):
 def poll_qbss_channel_utilization(iface, bssid):
     """Best-effort attempt at a real airtime signal: scan and read the
     target bssid's advertised QBSS Load IE (802.11e/k channel utilization,
-    0-255 scale, 255 == 100% busy), if the AP broadcasts one. This is the
-    only real-airtime cross-check available without a dedicated monitor-
-    mode radio -- see the ble_sniffer/row2_duty_cycle comments in
-    config.yaml for why a proper per-second airtime capture isn't
-    implemented. Returns a dict with a 0-100 percent value, or None if the
-    interface, AP, or IE isn't available -- never raises, since this must
-    never fail an actual test. One sample; see start_qbss_poller for
-    repeated sampling during a run.
+    0-255 scale, 255 == 100% busy), if the AP broadcasts one. Returns a dict
+    with a 0-100 percent value, or None if the interface, AP, or IE isn't
+    available; never raises. One sample; see start_qbss_poller for repeated
+    sampling during a run.
 
-    Two real bugs fixed here (confirmed live, 2026-09-23, against the real
-    WirelessTests/TL-MR6400 AP once a genuinely separate USB WiFi adapter
-    was available to test against for the first time -- qbss_iface had
-    been null since this was written, so neither bug had ever been
-    exercised before):
-    1. `iw dev <iface> scan bssid <bssid>` -- "bssid" is not a valid scan
-       filter on this iw version (6.7; usage: scan [-u] [freq ...]
-       [duration ...] [ies ...] [meshid ...] [...] [ssid ...|passive], no
-       bssid option at all) -- the command always failed with a usage
-       error and non-zero exit, so this function could never have returned
-       real data. Fixed by scanning broadly (no filter) instead.
-    2. A broad scan returns EVERY visible AP's own "BSS Load" block, each
-       with its own "channel utilisation: N/255" line -- searching the
-       whole scan output with one global regex (the original approach)
-       would silently match whichever AP's line happens to come first,
-       not necessarily the target bssid's. Fixed by first locating the
-       target's own "BSS <bssid>(...)" section and searching only within
-       it (up to the next "BSS " line or end of output).
-
-    A THIRD real (non-code) failure mode, found diagnosing why an entire
-    real session's row3 (forced-channel) block came back with every QBSS
-    sample blank while row2 on the same session had real values throughout
-    (2026-09-24): nl80211 only allows ONE scan in flight per physical
-    radio -- a second concurrent `iw scan` on the same iface fails with
-    "Device or resource busy" (confirmed by firing two at once: one
-    returncode=0, the other returncode=240). That session's row3 window
-    overlapped with unrelated manual `iw scan` testing on this same
-    adapter (developing poll_channel_occupancy_snapshot/count_nearby_ble_
-    devices below), so the two competed and the session's own polls lost
-    that race every time. The busy/AP-not-found/no-IE cases were
-    previously indistinguishable (all just silently returned None) --
-    logged at DEBUG now so a repeat doesn't need this same forensic
-    reconstruction.
+    Scans broadly (iw has no bssid filter) and reads only the target's own
+    "BSS <bssid>(...)" section, since every AP has its own BSS Load block.
+    A concurrent scan on the same radio fails with "Device or resource
+    busy"; the busy/AP-not-found/no-IE cases are logged at DEBUG.
     """
     try:
         result = _iw_scan(iface)
@@ -344,8 +273,8 @@ def poll_qbss_channel_utilization(iface, bssid):
 
 def _qbss_from_scan_output(scan_stdout, bssid):
     """bssid's QBSS channel utilization (0-100 %) from `iw dev <if> scan`
-    output, searching only within bssid's own "BSS <bssid>" section (see
-    poll_qbss_channel_utilization, bug 2). Returns None if the AP isn't in
+    output, searching only within bssid's own "BSS <bssid>" section.
+    Returns None if the AP isn't in
     the scan or doesn't advertise a BSS Load IE."""
     section = _bss_section(scan_stdout, bssid)
     if section is None:
@@ -423,20 +352,12 @@ def sample_qbss_once(iface, bssid, attempts=2):
 
 def start_qbss_poller(iface, bssid, poll_interval_s=30):
     """Start a background thread sampling QBSS channel utilization every
-    poll_interval_s WHILE the run is in progress -- polling only once after
-    the run ends (an earlier version of this function) measures an idle
-    channel, defeating the whole point. Refuses to start (returns None, logs
-    once) if iface fails _qbss_iface_is_safe -- actively perturbing the BLE
-    measurement it's trying to explain would be worse than no data.
+    poll_interval_s while the run is in progress. Refuses to start (returns
+    None, logs once) if iface fails _qbss_iface_is_safe.
 
-    iface=None (config.yaml's qbss_iface left unset/null) auto-detects via
-    _autodetect_wifi_iface() instead of requiring the interface name to be
-    hardcoded -- an explicit iface is still honored as-is (and still passes
-    through the same safety check below) for the rare case of 2+ qualifying
-    adapters, where auto-detection can't disambiguate. iface=False (config.yaml
-    explicitly set to `false`, not left blank) skips polling entirely without
-    attempting auto-detection, for opting out even when a safe adapter is
-    plugged in."""
+    iface=None (config.yaml's qbss_iface unset/null) auto-detects via
+    _autodetect_wifi_iface(); an explicit iface is used as given (still
+    safety-checked). iface=False skips polling without auto-detection."""
     iface = _resolve_qbss_iface(iface, bssid)
     if iface is None:
         return None
@@ -471,14 +392,10 @@ def stop_qbss_poller(poller):
 
 
 # =============================================================================
-# Per-channel (1-13) WiFi occupancy -- for the passive real-gym visit
-# (gym_session.py), not the chamber rows. Where poll_qbss_channel_utilization
-# above tracks ONE known AP's own advertised load, this surveys every
-# visible 2.4GHz channel via a broad scan, so a gym with several APs on
-# different channels doesn't get summarized by only its busiest one --
-# needed to answer "how much AFH headroom does a real gym leave" (manuscript
-# Table tab:gym-observation) for channels the config doesn't already know
-# about. Same _qbss_iface_is_safe() gate and separate-adapter requirement.
+# Per-channel (1-13) WiFi occupancy, for the gym sessions (gym_session.py).
+# Where poll_qbss_channel_utilization tracks one known AP's advertised load,
+# this surveys every visible 2.4GHz channel via a broad scan. Same
+# _qbss_iface_is_safe() gate and separate-adapter requirement.
 # =============================================================================
 
 WIFI_24GHZ_CHANNELS = list(range(1, 14))
@@ -486,8 +403,7 @@ WIFI_24GHZ_CHANNELS = list(range(1, 14))
 
 def _freq_mhz_to_24ghz_channel(freq_mhz):
     """2412 MHz (ch1) .. 2472 MHz (ch13), 5 MHz spacing (802.11 channel
-    numbering). Returns None for anything outside that band (5/6GHz APs,
-    which aren't part of the BLE-relevant 2.4GHz picture here)."""
+    numbering). Returns None for anything outside that band."""
     channel = round((freq_mhz - 2407) / 5)
     return channel if 1 <= channel <= 13 else None
 
@@ -528,12 +444,8 @@ def _parse_channel_occupancy(scan_stdout):
 
 def poll_channel_occupancy_snapshot(iface):
     """One broad scan, bucketed per 2.4GHz channel. Returns None on any
-    scan failure (interface, permissions, driver) -- never raises. Same
-    concurrent-scan caveat as poll_qbss_channel_utilization: nl80211 only
-    allows one scan in flight per radio, so a second scan on this same
-    iface (e.g. manual `iw scan` testing, or another poller on the same
-    adapter) fails with "Device or resource busy" -- logged at DEBUG so a
-    string of blank polls is diagnosable rather than just silent."""
+    scan failure (interface, permissions, driver, a concurrent scan); never
+    raises. Failures are logged at DEBUG."""
     try:
         result = _iw_scan(iface)
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -554,13 +466,11 @@ def _wall_time():
 
 def _open_session_csv(path, header):
     """Open a session-wide poller CSV for writing WITHOUT losing what an
-    earlier run of the same session already recorded: `run --resume`
-    restarts these pollers in the same session directory, and opening with
-    "w" wiped the file -- confirmed 2026-09-30, when resuming session
-    20260930_105034 for a single rerun erased ~5 h of channel occupancy.
+    earlier run of the same session already recorded (`run --resume`
+    restarts these pollers in the same session directory).
 
     Appends when the existing file has the same header. A file with a
-    different header (e.g. written before the wall_time column existed) is
+    different header is
     renamed aside to <stem>_before_<mtime><suffix> and a fresh file started,
     so nothing is ever overwritten. timestamp_s restarts at 0 in each
     resumed segment; wall_time is what orders rows across segments."""
@@ -603,11 +513,9 @@ def _channel_occupancy_poll_loop(iface, out_csv_path, poll_interval_s, stop_even
 
 def start_channel_occupancy_poller(iface, out_csv_path, poll_interval_s=60):
     """Start a background thread scanning all 13 2.4GHz channels every
-    poll_interval_s for the WHOLE gym session (unlike the per-run AFH/QBSS
-    pollers, this is meant to be started once and run across every device
-    in the visit -- background WiFi occupancy doesn't belong to any one
-    device's run). Refuses to start (returns None, logs once) if iface
-    fails _qbss_iface_is_safe(), same reasoning as start_qbss_poller.
+    poll_interval_s for the whole gym session (unlike the per-run AFH/QBSS
+    pollers). Refuses to start (returns None, logs once) if iface fails
+    _qbss_iface_is_safe(), as start_qbss_poller.
 
     iface=None (config.yaml's channel_occupancy_iface left unset/null)
     auto-detects via _autodetect_wifi_iface(), same as start_qbss_poller.

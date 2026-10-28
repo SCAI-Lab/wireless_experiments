@@ -1,4 +1,4 @@
-"""Fig. gym vs chamber: Polar H10 M'(100 ms) per run (v1.4.3, censored, = miss_cens_100ms_pct).
+"""Fig. gym vs chamber: Polar H10 M'(100 ms) per run (censored, = miss_cens_100ms_pct).
 Chamber: no-load runs (any channel set) and k = 0/2/4/8 at 75% load (forced_channel_duty75pct pooled as k = 0).
 Gym: all 36 Polar runs by people present at run start (most recent hand count at or before start).
 Style follows analyze_session.fig_paper_gym_chamber.

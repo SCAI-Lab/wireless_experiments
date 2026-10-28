@@ -36,7 +36,7 @@ def _qbss_ambient_split(manifest_row):
     without our traffic: for loaded runs, the mean of the before/after
     readings is the ambient and during-traffic minus that is our own share;
     a no-load run's whole-run QBSS is all ambient. Blank when the readings
-    it needs are missing (e.g. sessions before 2026-10-06)."""
+    it needs are missing."""
     during = _float_or_none(manifest_row.get("qbss_channel_utilization_pct"))
     loaded = _float_or_none(manifest_row.get("induced_load_mbps")) is not None
     if not loaded:
@@ -74,9 +74,8 @@ def do_parse(cfg, session_dir, session_ts):
     with open(manifest) as f:
         rows = list(csv.DictReader(f))
 
-    # Fallback for manifests recorded before the mac_address column existed
-    # -- look it up from the current config by device name instead, so an
-    # old session can still be re-parsed with correct per-device filtering.
+    # Manifests without a mac_address column: look it up from the config by
+    # device name.
     mac_by_device_name = {d["name"]: d.get("mac_address") for d in cfg["devices"]}
     battery_topic_by_device_name = {
         d["name"]: d.get("battery_topic") for d in cfg["devices"]
@@ -101,9 +100,7 @@ def do_parse(cfg, session_dir, session_ts):
         # CONDITIONS (forced-channel + load, where degradation/collapse IS
         # the expected result being measured), PASSED only requires that the
         # link engaged at all (some connected time or a recorded 0x3E
-        # establishment-failed attempt) -- a run with 30 disconnects can
-        # legitimately be PASSED there. See evaluate_run_result's docstring
-        # for the full reasoning.
+        # establishment-failed attempt). See evaluate_run_result.
         "status",
         "error",
         "generated_at",
@@ -283,11 +280,8 @@ def do_parse(cfg, session_dir, session_ts):
                 parsed, row["row"], row["condition"], planned_duration_s, data_problems
             )
 
-            # Computed unconditionally (not just for the contamination check
-            # below) -- the AFH poller writes this run's own connection-RSSI
-            # samples here regardless of row, so aggregate_connection_rssi
-            # needs it for every row, not just the ones eligible for the
-            # forced-channel-leak check.
+            # Every row: the AFH poller also writes the connection-RSSI
+            # samples here (aggregate_connection_rssi).
             afh_csv_path = capture_path.with_name(capture_path.stem + "_afh.csv")
             connection_rssi = aggregate_connection_rssi(afh_csv_path)
             rosbag_dir = capture_path.with_name(capture_path.stem + "_rosbag")

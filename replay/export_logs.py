@@ -9,8 +9,7 @@ strings given with --redact OLD=NEW (the SLURM user, the node's hostname)
 and /home/<user> paths are replaced. Afterwards no file may contain an OLD
 string, a /home/ path or an IP address other than loopback; otherwise the
 export stops. analyze_e2e.py reads none of the changed lines (they are in
-the SLURM job's environment and output files); --check reruns it on the
-copy to show that.
+the SLURM job's environment and output files).
 
 Usage:
     python3 export_logs.py --out ~/zenodo --redact user=USER --redact node=NODE \\

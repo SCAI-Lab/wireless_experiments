@@ -10,37 +10,15 @@ from .btmon_patterns import (
 
 
 # =============================================================================
-# Corsano sample-completeness. Wire format (opcodes, byte layout, CRC-8) is
-# now validated against a real capture (captures/20260923_004345,
-# F1:3B:40:28:CB:EC, 2026-09-23) -- confirmed by decoding real payloads,
-# e.g. attribute handle 0x0010's write `161a0917002c207800` matches
-# APP_CMD_UPDATE_TIME (cmd=22) with year=2026/month=09/day=23, the exact
-# real date of that session.
+# Corsano sample-completeness (opcodes, byte layout and CRC-8 as in the
+# corsano_ros driver).
 #
-# IMPORTANT: btmon does NOT show Type:/UUID annotations for these
-# characteristics on a normal reconnect -- BlueZ serves simplepyble a
-# cached GATT table for an already-bonded device instead of re-running
-# discovery over the air, so the ATT exchanges that would teach btmon the
-# handle-to-UUID mapping never happen on the wire. Identification here is
-# by real, validated attribute handle number instead (see
-# CORSANO_WRITE_CHAR_HANDLE etc. below) -- these are device-firmware-fixed,
-# not the dynamic per-session values seen elsewhere in this file, but WILL
-# need re-deriving for a different Corsano unit/firmware revision.
+# btmon shows no Type:/UUID annotations for these characteristics on a
+# reconnect (BlueZ uses its cached GATT table for a bonded device), so they
+# are identified by attribute handle (CORSANO_WRITE_CHAR_HANDLE etc. below),
+# which is fixed by the device firmware.
 #
-# SEPARATE, more important finding from that same real capture: BioZ, ACC,
-# and Stress files showed ZERO growth across the entire 300s session
-# (byte-for-byte identical downloaded data on every single poll) -- only
-# Activity grew (by exactly one 38-byte record). The BLE link and download
-# mechanism are both genuinely working (Activity proves it) -- this means
-# BioZ/ACC/Stress RECORDING isn't actually active on the device, a
-# corsano_ros-side gap (no equivalent of _set_activity_plan() for these
-# streams; _enable_bioz_streaming() uses fire-and-forget driver.write()
-# with no ack tracking) unrelated to BLE/interference entirely. Worth
-# fixing before trusting these streams' chamber results at all -- see the
-# session write-up for the details behind this.
-#
-# Corsano's architecture is also fundamentally different from Polar's: it's
-# not continuous streaming, it's 0.1s-interval POLLING of on-device files
+# Unlike Polar's streaming, the Corsano driver POLLS on-device files at 0.1 s
 # (CMD_GET_FILE_SIZE, then CMD_START_STREAMING_FILE_WITH_SIZE[_OFFSET] to
 # download a tail window). Only ACC packets carry a real embedded sequence
 # number (0-255 wraparound) that's independent of polling cadence -- exactly
@@ -83,22 +61,8 @@ def _corsano_crc8(data):
 
 ATT_HANDLE_RE = re.compile(r"Handle:\s*(0x[0-9A-Fa-f]+)")
 
-# Real, validated attribute handles for the Corsano unit tested 2026-09-23
-# (F1:3B:40:28:CB:EC) -- NOT derived from GATT UUID discovery, because btmon
-# never shows Type:/UUID annotations for this device's characteristics at
-# all on a normal reconnect: BlueZ serves simplepyble a cached GATT table
-# for an already-bonded device instead of re-running discovery over the
-# air, so the ATT exchanges that would teach btmon the handle-to-UUID
-# mapping (Read By Type / Find Information) simply never happen on the
-# wire. Confirmed by decoding real payloads instead: handle 0x0010's write
-# `161a0917002c207800` matches APP_CMD_UPDATE_TIME (cmd=22) with year=2026,
-# month=09, day=23 -- the exact real date/time of the session that produced
-# it -- and handle 0x0015 carries a clean 7-byte CMD_GET_FILE_SIZE (cmd=46,
-# 0x2e) response shape. These are GATT attribute handles (fixed per device
-# firmware), not the dynamic per-session ACL connection handles seen
-# elsewhere in this file, so they should stay stable across sessions with
-# this same physical unit -- but WILL need re-deriving the same way for a
-# different Corsano unit or firmware revision.
+# GATT attribute handles of the Corsano 287-2B (fixed by its firmware; a
+# different unit or firmware may need them re-derived from a capture).
 CORSANO_WRITE_CHAR_HANDLE = "0x0010"
 CORSANO_FILE_RX_HANDLE = "0x0012"
 CORSANO_COMMAND_RX_HANDLE = "0x0015"
@@ -115,11 +79,8 @@ def _corsano_extract_frames(text):
       file_size_samples: [(file_id, size), ...] in capture order, from
         CMD_GET_FILE_SIZE (cmd=46) responses on COMMAND_RX_CHAR
 
-    Identifies characteristics primarily by the real, validated attribute
-    handle numbers above (see their comment for why UUID Type: annotations
-    can't be relied on for this device), falling back to a UUID Type: match
-    if btmon happens to have one (e.g. after a fresh, unbonded pairing that
-    actually ran full discovery over the air)."""
+    Identifies characteristics by the attribute handles above, falling back
+    to a UUID Type: match if btmon has one (after a fresh pairing)."""
     lines = text.splitlines()
     transfers = []
     file_size_samples = []
@@ -221,24 +182,15 @@ EMPTY_CORSANO_COMPLETENESS = {
 def _corsano_acc_completeness(transfers):
     """ACC packets carry a real embedded 0-255 wraparound sequence number
     (metric_array header byte 0, see accelerometer_parser.py's own
-    "Packet drop detected" check) -- this is the one Corsano stream with a
-    completeness signal as direct as Polar's PMD timestamps.
+    "Packet drop detected" check).
 
-    IMPORTANT: each downloaded buffer is ONE packet, not several stacked
-    ones -- confirmed from retrieve_data.py's own call, process_metric_array
-    (buffer_data, 0, metric_id=0x2B, metric_size=len(buffer_data)), which
-    passes the WHOLE buffer as a single metric's size. An earlier version of
-    this function wrongly treated a transfer as multiple back-to-back
-    packets; caught by a synthetic-data test before this was ever trusted
-    against anything real.
+    Each downloaded buffer is one packet (retrieve_data.py passes the whole
+    buffer to process_metric_array as a single metric).
 
-    The index appears to identify which internal chunk of the device's own
-    accel file this tail-window download landed on, NOT a per-notification
-    counter -- since each 0.1s poll re-downloads roughly the same ~1024-byte
-    tail, most consecutive polls will see the SAME index (the file hasn't
-    advanced to a new chunk yet). That repeat is not new data and not loss,
-    so it's skipped rather than compared -- only an actual index CHANGE is
-    checked for whether it was the next consecutive chunk or a skipped one."""
+    The index identifies which chunk of the device's accel file the
+    tail-window download landed on, so consecutive polls often see the same
+    index: a repeat is skipped, and only an index change is checked for
+    whether it was the next chunk or a skipped one."""
     acc_transfers = [t for t in transfers if t["file_id"] == CORSANO_FILE_ID_ACC]
     if not acc_transfers:
         return {}
@@ -351,20 +303,12 @@ def compute_corsano_completeness(text):
         result["corsano_stress_gap_s_max"] = stress_gap
     result.update(_corsano_bioz_completeness(transfers, file_size_samples))
 
-    # Whether the watch actually recorded anything during the run, from its
-    # own file-size counters. Checked 2026-10-01: in EVERY session since at
-    # least 09-22 the ACC, BioZ and Stress files never grew (5113245 /
-    # 3885404 / 47916 bytes, identical across all runs) -- the driver just
-    # re-downloaded the same unchanged 1 KiB tail every ~4 s, so the ACC
-    # "completeness" saw one chunk and reported 100% for data that was
-    # never new. Only Activity grew (one 38-byte record per few minutes).
-    #
-    # The files are circular once the watch's storage is full (2026-10-01:
-    # BioZ grew 3886017 -> 3887047 within a run, then dropped to 3883260 as
-    # the oldest block was deleted), so: "growth" sums only the size
-    # INCREASES between polls (a deletion isn't recorded data), and "new
-    # data" means the downloaded tail itself changed, which holds whether
-    # or not the size moves.
+    # Whether the watch recorded anything during the run, from its own
+    # file-size counters (if a file never grows, the driver re-downloads the
+    # same tail and completeness would report 100% for data that was never
+    # new). The files are circular once the watch's storage is full, so
+    # "growth" sums only the size INCREASES between polls, and "new data"
+    # means the downloaded tail itself changed.
     def _growth(file_id):
         sizes = [size for fid, size in file_size_samples if fid == file_id]
         if len(sizes) < 2:

@@ -57,7 +57,7 @@ $RS "$SRC/healthcare_msgs/" "$TARGET:$REMOTE/build/healthcare_msgs/"
 $RS --exclude '__pycache__/' --exclude '.mypy_cache/' \
     "$SRC/medwear/ros2_to_medwear/" "$TARGET:$REMOTE/build/medwear/ros2_to_medwear/"
 scp -q "$WS/wireless_experiments/scripts/analyze_session.py" "$TARGET:$REMOTE/build/wireless_experiments/scripts/"
-# --delete-excluded also clears anything an older exclude list let through
+# --delete-excluded also removes excluded files already on the node
 $RS --delete-excluded --exclude 'logs*/' --exclude 'results*/' --exclude '.replay_*' \
     --exclude '__pycache__/' --exclude '.mypy_cache/' \
     "$WS/wireless_experiments/replay/" "$TARGET:$REMOTE/build/wireless_experiments/replay/"

@@ -21,33 +21,17 @@ from .btmon_patterns import (
     STATUS_RE,
 )
 
-
 # =============================================================================
-# Nearby BLE device density -- for the passive real-gym visit, a rough
-# background-BLE-density proxy (count of distinct advertisers during a
-# short scan window), not a precise census.
+# Nearby BLE device density: count of distinct advertisers during a short
+# scan window, a rough background-density proxy.
 #
-# PRIVACY (GDPR / Swiss FADP): a public space's BLE scan picks up MAC
-# addresses from bystanders' phones, watches, and other personal devices,
-# which can count as personal data. This is designed so that constraint
-# can't be violated by a future edit: count_nearby_ble_devices() below
-# builds a Python set of addresses ONLY to deduplicate within one scan
-# window, and returns nothing but the integer len() of that set -- the
-# addresses themselves are never returned, logged, or written to disk, and
-# go out of scope (garbage-collected) the moment the function returns.
-# _ble_density_poll_loop only ever writes that integer to CSV. Before using
-# this for a real visit: get the facility's permission, let staff know
-# you're there, and confirm with them that no ethics review is needed (the
-# sensors are on a mannequin and no patient data is collected, but the
-# facility should confirm that holds for their specific space/policy).
+# PRIVACY (GDPR / Swiss FADP): bystanders' device addresses can be personal
+# data. count_nearby_ble_devices() uses them only to deduplicate within one
+# scan window and returns only the count; addresses are never returned,
+# logged or written to disk.
 #
-# Unlike the per-channel WiFi poller (separate USB adapter, no
-# perturbation), this scans on hci0 -- the SAME radio the sensor under
-# test is connected through. Scanning puts the adapter into a mode that
-# competes for airtime with the active connection, so this deliberately
-# uses a short window (default 5s) at a long interval (default 90s) to
-# keep that perturbation brief and infrequent rather than pretending it
-# doesn't exist.
+# This scans on hci0, the radio the sensor under test is connected through,
+# so it uses a short window (default 5 s) at a long interval (default 90 s).
 # =============================================================================
 
 _BLE_ADDRESS_RE = re.compile(r"^([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})\b")
@@ -86,7 +70,9 @@ def count_nearby_ble_devices(controller, scan_duration_s=5):
     return len(addresses)  # `addresses` itself is discarded here, on return
 
 
-def _ble_density_poll_loop(controller, out_csv_path, scan_duration_s, poll_interval_s, stop_event):
+def _ble_density_poll_loop(
+    controller, out_csv_path, scan_duration_s, poll_interval_s, stop_event
+):
     start = time.time()
     header = ["timestamp_s", "nearby_device_count", "wall_time"]
     with _open_session_csv(out_csv_path, header) as f:
@@ -99,14 +85,14 @@ def _ble_density_poll_loop(controller, out_csv_path, scan_duration_s, poll_inter
             f.flush()
 
 
-def start_ble_density_poller(controller, out_csv_path, scan_duration_s=5, poll_interval_s=90):
+def start_ble_density_poller(
+    controller, out_csv_path, scan_duration_s=5, poll_interval_s=90
+):
     """Start a background thread sampling nearby BLE device density for the
     WHOLE gym session (like start_channel_occupancy_poller, not scoped to
     any one device's run). Pass controller=None or enabled=False upstream
-    to skip entirely -- there's no safety auto-detection here the way
-    _qbss_iface_is_safe gates the WiFi poller, since this deliberately DOES
-    share hci0 with the sensor connection (see module comment); the
-    short/infrequent defaults are the mitigation, not an interface check."""
+    to skip entirely. It shares hci0 with the sensor connection (see the
+    comment above)."""
     if not controller:
         return None
     stop_event = threading.Event()
@@ -133,14 +119,10 @@ def stop_ble_density_poller(poller):
 
 
 # =============================================================================
-# AFH / channel-map polling -- optional, best-effort. Needs `hcitool` to be
-# able to send raw HCI commands (LE Read Channel Map), which requires root
-# or CAP_NET_ADMIN/CAP_NET_RAW on the hcitool binary (confirmed by direct
-# testing: `hcitool cmd` fails with "Operation not permitted" for a normal
-# user, unlike btmon which apparently already has the capability set). If
-# that grant isn't in place, this silently produces no data -- same
-# graceful-degradation contract as the BLE sniffer and QBSS poll. To enable
-# it: `sudo setcap cap_net_raw,cap_net_admin+eip $(which hcitool)` once.
+# AFH / channel-map polling, optional and best-effort. Needs `hcitool` to
+# send raw HCI commands (LE Read Channel Map), i.e. root or
+# CAP_NET_ADMIN/CAP_NET_RAW on the binary; without it, no data:
+# `sudo setcap cap_net_raw,cap_net_admin+eip $(which hcitool)`.
 # =============================================================================
 
 
@@ -149,47 +131,21 @@ def _btmon_watch_for_handle(
 ):
     """Watch a live, separate btmon monitor for this device's own LE
     Connection Complete event, and keep handle_holder[0] updated with its
-    handle -- updated (not just set-once) on every successful match, so a
-    mid-run reconnect (e.g. the driver's own startup connect/disconnect/
-    reconnect sequence) doesn't leave a stale handle behind.
-
-    Replaces an earlier `hcitool con`-based handle lookup: confirmed via
-    real captures (2026-09-23) that it silently failed every single time --
-    zero LE Read Channel Map commands ever appeared in any capture, meaning
-    the handle was never found (hcitool con not listing the LE link, a
-    permission issue, or both -- inconclusive from the symptom alone). The
-    handle is already right there in the connection-complete event btmon
-    itself reports, using the exact same regexes parse_btmon_text already
-    trusts for this, so there's no separate lookup to fail.
+    handle, updated on every match so a mid-run reconnect doesn't leave a
+    stale handle behind.
 
     HCI monitor sockets support multiple simultaneous listeners, so running
     this alongside the main capture-writing btmon instance (which writes to
     a file, not stdout) doesn't interfere with it.
 
     IMPORTANT: btmon fully buffers its stdout (thousands of bytes at a
-    time, only flushing at exit) unless stdout is a real terminal --
-    confirmed by direct testing (2026-09-23): a plain subprocess.PIPE (and
-    even `stdbuf -oL`, which fails to override it) sat completely silent
-    for the whole run, while a pseudo-terminal produced immediate,
-    line-by-line output. So this allocates a real pty for btmon's stdout,
-    with color explicitly disabled (--color=never) since a pty also
-    enables ANSI color codes, which would otherwise get interleaved into
-    the exact text this regex-matches against (confirmed via the same
-    testing) -- and --no-pager, since a pty could otherwise make btmon
-    think it should page long output through `less`, which would hang
-    this reader waiting for a keypress that never comes.
+    time, only flushing at exit) unless stdout is a real terminal.
 
     proc_holder, if given, is a single-element list this sets to the btmon
     Popen object right after launch, so stop_afh_poller() can terminate it
-    directly -- confirmed via real sessions (2026-09-22) that just setting
-    stop_event isn't enough: this loop only checks stop_event BETWEEN
-    f.readline() calls, and readline() blocks until btmon actually produces
-    another line. If nothing else on hci0 happens to generate output during
-    the shutdown window, the thread sits blocked past any join() timeout,
-    logging a false "didn't stop cleanly" warning on every single run.
-    Terminating the process directly closes its end of the pty, which makes
-    the blocked readline() return immediately (EOF) instead of waiting on
-    ambient traffic that may never come."""
+    directly: this loop checks stop_event only between f.readline() calls,
+    which block until btmon produces another line; terminating btmon makes
+    the blocked readline() return (EOF)."""
     master_fd, slave_fd = pty.openpty()
     try:
         proc = subprocess.Popen(
@@ -204,16 +160,8 @@ def _btmon_watch_for_handle(
     if proc_holder is not None:
         proc_holder[0] = proc
     os.close(slave_fd)
-    # errors="replace": btmon's live text output can embed raw bytes from a
-    # real device's payload (e.g. a manufacturer-data or name field) that
-    # aren't valid UTF-8 -- confirmed live (2026-09-24, a real row3 forced-
-    # channel session): the default strict decoding crashed this whole
-    # thread with UnicodeDecodeError on a real capture. Everything this
-    # loop actually matches on (CONN_COMPLETE_RE, HANDLE_ADDRESS_RE, event
-    # names) is plain ASCII, so replacing an occasional bad byte elsewhere
-    # in the line can't affect the matching -- silently losing the thread
-    # (and with it every AFH/RSSI sample for the rest of the run) would be
-    # far worse than a corrupted byte in text we don't parse anyway.
+    # errors="replace": btmon's text can embed payload bytes that aren't
+    # valid UTF-8; everything matched here is ASCII.
     f = os.fdopen(master_fd, "r", buffering=1, encoding="utf-8", errors="replace")
     expected_mac = mac_address.upper()
     try:
@@ -265,11 +213,7 @@ def _hcitool_command_complete(stdout, ogf, ocf):
     of the Command Complete event (0x0e) for THIS command (ogf/ocf) in
     `hcitool cmd` output, or None if there isn't one.
 
-    The first "HCI Event" isn't necessarily the reply: 2026-10-02 02:05:07
-    (row5 Corsano headroom_k2_no_load rep2) the controller answered LE Set
-    Host Channel Classification with Status Success (seen in btmon), yet the
-    run aborted as "failed to force channel classification" because an
-    unrelated event printed first had its bytes read as the status. hcitool
+    The first "HCI Event" isn't necessarily the reply. hcitool
     also reads only ONE event and exits, so while the adapter is scanning the
     reply can be missed entirely -- see set_host_channel_classification."""
     opcode = (ogf << 10) | ocf
@@ -279,7 +223,7 @@ def _hcitool_command_complete(stdout, ogf, ocf):
         if not m or int(m.group(1), 16) != 0x0E:
             continue
         payload = []
-        for nxt in lines[i + 1:]:
+        for nxt in lines[i + 1 :]:
             if nxt.lstrip().startswith(("<", ">")):
                 break
             try:
@@ -315,38 +259,6 @@ def _hcitool_read_channel_map(handle):
     return "".join(f"{b:02x}" for b in channel_map), enabled
 
 
-# =============================================================================
-# Forced BLE channel classification -- the Row 3 "mechanism" test. Row 2's
-# duty100pct showed AFH settling to a stable, narrowed channel map (e.g. 15
-# enabled channels for Corsano) and holding the link with zero unexpected
-# disconnects -- this forces the OPPOSITE: no AFH escape route, so any
-# degradation Row 2 didn't show can no longer be attributed to "AFH routed
-# around it." Directly comparing Row 2's duty100pct (AFH free) against Row
-# 3's forced_channel_max_load (AFH constrained to the channels WiFi channel
-# 6 occupies) is what actually quantifies how much AFH is protecting the
-# link, rather than assuming it.
-#
-# Why 12-19: BLE data channels 0-10 sit at 2404 + 2*i MHz and 11-36 at
-# 2406 + 2*i MHz (advertising channel 38 takes 2426 MHz in between), so
-# 12-19 are 2430-2444 MHz. WiFi channel 6's OFDM signal (2437 MHz centre,
-# 16.25 MHz occupied) spans about 2428.9-2445.1 MHz: 12-19 are exactly the
-# data channels that fit fully inside it, while 11 (2428) and 20 (2446)
-# only touch its edges. Pang et al. saw the same edge effect with WiFi
-# channel 1 (BLE 0-8 badly hit, 9 much less).
-#
-# This is our own design, not taken from a published method: the link
-# keeps hopping, but only over channels that are all interfered ("nowhere
-# to escape"). Pang et al. instead pin one channel at a time; Spork et al.
-# cite works that disable blacklisting entirely. An earlier version of
-# this comment said 12-19 matched Al Kalaa et al. 2020 (C63.27 case study,
-# doi:10.1109/MEMC.2020.9328232) -- it doesn't: that paper never restricts
-# the channel map; 2430 MHz is only one of its three I/U observation
-# frequencies, and its tiers vary the number of WiFi channels, not load.
-#
-# The controller can still narrow the map below the forced set; the AFH
-# poller logs the real enabled-channel count per run (_afh.csv).
-# =============================================================================
-
 ALL_BLE_DATA_CHANNELS = list(range(37))
 FORCED_CHANNEL_RANGE = list(range(12, 20))  # 12-19 inclusive: fully inside WiFi ch6
 
@@ -354,10 +266,8 @@ FORCED_CHANNEL_RANGE = list(range(12, 20))  # 12-19 inclusive: fully inside WiFi
 def _encode_channel_classification(usable_channels):
     """5-byte (37-bit) little-endian Channel_Classification bitmap for
     HCI_LE_Set_Host_Channel_Classification: bit i = 1 means BLE data
-    channel i (0-36) is usable, 0 means excluded. Per spec, the controller
-    requires at least 2 usable channels -- not enforced here, since a
-    caller passing fewer is a real config error worth a loud failure, not
-    a silently "corrected" one."""
+    channel i (0-36) is usable, 0 means excluded. The controller requires
+    at least 2 usable channels (not enforced here)."""
     bitmap = 0
     for ch in usable_channels:
         if not 0 <= ch <= 36:
@@ -372,24 +282,13 @@ HCITOOL_REPLY_ATTEMPTS = 5
 def set_host_channel_classification(usable_channels):
     """Send HCI_LE_Set_Host_Channel_Classification (OGF 0x08, OCF 0x0014)
     to restrict which BLE data channels the controller's AFH may use to
-    exactly usable_channels -- forces co-channel operation with whatever
-    WiFi is occupying the excluded channels, instead of letting AFH route
-    around it. Reuses the same hcitool raw-HCI-command path (and the same
-    cap_net_raw/cap_net_admin capability) already validated for LE Read
-    Channel Map. Returns True only on a confirmed Success status from the
-    controller -- never raises, so a permission/hardware failure here
-    degrades to "condition not actually applied" rather than crashing the
-    run; callers should treat a False return as reason to abort the
-    attempt, since silently NOT forcing the channel map would invalidate
-    the whole point of this condition."""
+    exactly usable_channels, so the link cannot hop away from the WiFi on
+    them. Same hcitool raw-HCI path (and capabilities) as LE Read Channel
+    Map. Returns True only on a confirmed Success status; never raises.
+    Callers abort the attempt on False."""
     classification = _encode_channel_classification(usable_channels)
     hex_bytes = [f"0x{b:02x}" for b in classification]
-    # hcitool reads a single event and exits, so while the adapter is
-    # scanning it can print an advertising report and close before the
-    # Command Complete arrives: 2026-10-05 16:13:02 (row5 Polar
-    # headroom_k0_duty75pct rep2) btmon shows "RAW Close: hcitool" 1 ms
-    # before the controller's Success, and the run aborted. The command is
-    # idempotent, so resend until the reply is actually seen.
+
     for _ in range(HCITOOL_REPLY_ATTEMPTS):
         try:
             result = subprocess.run(
@@ -408,11 +307,9 @@ def set_host_channel_classification(usable_channels):
 
 
 def reset_host_channel_classification():
-    """Restore normal, unrestricted AFH (all 37 data channels usable) --
-    ALWAYS call this before moving on to another test, or a forced, narrow
-    channel map would silently leak into unrelated runs on the same
-    controller. Returns True on confirmed success, same as
-    set_host_channel_classification."""
+    """Restore normal, unrestricted AFH (all 37 data channels usable) before
+    the next test, so a forced map can't leak into it. Returns True on
+    confirmed success, as set_host_channel_classification."""
     return set_host_channel_classification(ALL_BLE_DATA_CHANNELS)
 
 
@@ -421,20 +318,8 @@ def _hcitool_read_rssi(handle):
     the connection handle, and parse the Command Complete event bytes:
     [num_pkts(1), opcode(2), status(1), conn_handle(2), rssi(1, signed)].
     Returns None on any failure (permission, no response, unexpected
-    format, or non-success status).
-
-    Originally implemented as `hcitool rssi <mac_address>`, which looks up
-    the connection by MAC via HCIGETCONNINFO -- confirmed broken for LE
-    connections on this system (live test, 2026-09-23): with a real,
-    active LE connection visible in `hcitool con`, `hcitool rssi <mac>`
-    still failed with "Get connection info failed: No such file or
-    directory" every time, which is why rssi_dbm was blank in every real
-    AFH CSV despite channel_map_hex populating correctly right next to it
-    -- the channel-map read already went by HANDLE (_hcitool_read_channel_
-    map), never through the broken by-MAC path. Switching RSSI to the same
-    by-handle raw-HCI approach fixed it: a live test against a real Polar
-    H10 connection returned status=0x00, handle matching, rssi=0xCB (-53
-    dBm, a plausible real value) on the first try.
+    format, or non-success status). By handle, as the channel-map read:
+    `hcitool rssi <mac>` fails for LE connections.
     """
     lo, hi = handle & 0xFF, (handle >> 8) & 0xFF
     try:
@@ -519,10 +404,8 @@ def stop_afh_poller(poller):
         return
     watcher_thread, poll_thread, stop_event, proc_holder = poller
     stop_event.set()
-    # Terminate the watcher's btmon process directly rather than just
-    # relying on it noticing stop_event -- it can be blocked in a readline()
-    # that won't return until btmon produces another line, which may not
-    # happen before any join() timeout if hci0 is otherwise quiet.
+    # Terminate the watcher's btmon directly: it can be blocked in readline()
+    # (see _btmon_watch_for_handle).
     proc = proc_holder[0]
     if proc is not None:
         proc.terminate()
@@ -530,10 +413,3 @@ def stop_afh_poller(poller):
     poll_thread.join(timeout=5)
     if watcher_thread.is_alive() or poll_thread.is_alive():
         log.warning("     AFH poller thread(s) didn't stop cleanly within 5s")
-
-
-# Note: the AFH preflight check used to live here as a standalone
-# _check_afh_readable() helper, but that shape made it too easy to call
-# with the watcher started AFTER the connection already existed (the
-# original bug) -- the check is now inlined directly in check_devices_ready
-# below, where the watcher-before-connect ordering is enforced structurally.

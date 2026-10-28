@@ -35,8 +35,7 @@ class _ConsoleColorFormatter(logging.Formatter):
 class _OwnDebugOnly(logging.Filter):
     """DEBUG records only from this project's own loggers. Libraries log at
     DEBUG through the root logger too: bleak/dbus-fast dump every D-Bus
-    signal, including each nearby device's address and name (bystanders'
-    phones in the gym, 2026-10-13/16), and matplotlib its font lookups."""
+    signal, including each nearby device's address and name."""
 
     OWN = ("session_lib", "reconnect_regression", "__main__")
 

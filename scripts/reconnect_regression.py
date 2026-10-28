@@ -14,9 +14,8 @@ DATA each time, not just the link:
   supervision timeout, so this exercises the driver's reconnect/resume path
   but not the sensor's post-timeout advertising behaviour.
 --drop rfkill: soft-blocks hci0, so the sensor sees a real supervision
-  timeout. AVOID on this laptop: every block is a full controller shutdown,
-  and the Intel AX211 hung on one (2026-09-28 17:35:57, "HCI reset during
-  shutdown failed") and needed a reboot.
+  timeout. Every block is a full controller shutdown, which can hang the
+  controller ("HCI reset during shutdown failed") until a reboot.
 For a supervision-timeout drop without touching the controller, shield the
 strap by hand (closed metal tin) for the block time instead.
 
@@ -27,9 +26,8 @@ Per cycle it records (cycles.csv):
   link_back_s        unblock -> Connection Complete
   data_back_s        unblock -> first ECG sample (Polar) / notification
   ttfs_s             Connection Complete -> first sample
-  reconnect_ci_ms    interval the reconnect was opened at. 45 ms has so far
-                     always meant a ~30 s wait before PMD data (180/181
-                     stream starts across all sessions); 60/30 ms ~1 s
+  reconnect_ci_ms    interval the reconnect was opened at (with the H10,
+                     45 ms means a ~30 s wait before PMD data, 60/30 ms ~1 s)
   data_per_s         samples (Polar) / notifications per second over the
                      --stream-s window after data came back
   first_adv_s / first_connectable_adv_s
@@ -39,8 +37,8 @@ Per cycle it records (cycles.csv):
                      is blocked). Run once with --block-s 60 to measure that
                      window without the host reconnecting inside it.
 and fails (exit 1) if any cycle doesn't get data back within --recover-s,
-or if BlueZ ends up holding a stale "connected" device (the 2026-09-28
-row3 max_load wedge; see session_lib.heal_stale_bluez_connection).
+or if BlueZ ends up holding a stale "connected" device (see
+session_lib.heal_stale_bluez_connection).
 
 Usage:
   python3 scripts/reconnect_regression.py [--device Polar_H10] [--cycles 5]
@@ -115,9 +113,9 @@ def _powered():
 
 def ensure_powered():
     """bluetoothd normally re-powers the adapter on unblock; do it ourselves
-    if it didn't. If even that fails the controller is hung (seen 2026-09-28:
-    "HCI reset during shutdown failed", then every HCI Reset timing out) and
-    only a btusb reload or reboot brings it back -- stop instead of
+    if it didn't. If even that fails the controller is hung ("HCI reset
+    during shutdown failed", then every HCI Reset timing out) and only a
+    btusb reload or reboot brings it back -- stop instead of
     reporting the remaining cycles as driver failures."""
     for _ in range(10):
         if _powered():

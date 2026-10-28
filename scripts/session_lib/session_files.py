@@ -89,31 +89,16 @@ def run_key(row_label, device_name, condition, replicate):
 def load_completed_keys(cfg, session_dir):
     """Return the run_key()s that `run --resume` should skip.
 
-    For a retryable row (retry_on_fail=True, currently only Row 1), only a
-    real PASSED counts as done -- a FAILED run there means the setup was
-    broken and should be retried on resume, same as before.
+    For a retryable row (retry_on_fail=True, Row 1), only PASSED counts as
+    done: a FAILED run means the setup was broken and is retried on resume.
 
-    For a no-retry row (retry_on_fail=False, Rows 2/3/5), ANY recorded
-    attempt -- PASSED or FAILED -- counts as done. A FAILED attempt there is
-    itself the recorded data point (the interference did its job), not an
-    error to retry; without this, --resume would silently re-run it under a
-    capture filename with no _attemptN suffix (do_run only adds that suffix
-    inside its retry loop, which no-retry rows never enter) and overwrite
-    the original failed capture, destroying the evidence.
+    For a no-retry row (retry_on_fail=False), ANY recorded attempt counts
+    as done: a FAILED attempt there is itself the data point, and a re-run
+    would reuse its capture filename.
 
-    Reads manifest.csv, NOT results.csv (originally read results.csv --
-    real bug, found 2026-09-24 after a session crashed with an uncaught
-    ValueError mid-run: only main()'s RunAbortedError handler calls
-    do_parse before exiting, so a ValueError/StrayProcessError/
-    InfrastructureCheckError/DeviceCheckError crash -- anything else --
-    leaves results.csv missing or stale. With results.csv missing, this
-    returned an empty set, so --resume would have treated every already-
-    completed run as not done and re-run it, overwriting the ORIGINAL
-    completed captures under the same no-suffix filename described above
-    -- silently destroying real, already-collected data, not just wasting
-    chamber time. manifest.csv is written incrementally by append_manifest
-    inside _attempt_run itself, so it survives any crash and already
-    carries the same status/retry_on_fail columns this needs."""
+    Reads manifest.csv, not results.csv: append_manifest writes it during
+    each run, so it survives a crash, while results.csv may be missing or
+    stale."""
     path = manifest_path(session_dir)
     if not path.exists():
         return set()
@@ -137,10 +122,7 @@ def load_failed_keys(session_dir):
     used by --rerun-failed to find what to re-attempt.
 
     Latest row only: a rerun appends a new row rather than replacing the
-    old one, so a key that failed and was then rerun successfully has both.
-    Selecting on ANY FAILED row re-queued those already-passed reruns on
-    every later --rerun-failed (2026-10-05, five row5 Polar runs that had
-    passed at 21:45 were rerun again at 22:42)."""
+    old one, so a key that failed and was then rerun successfully has both."""
     path = manifest_path(session_dir)
     if not path.exists():
         return set()
@@ -156,14 +138,8 @@ def load_failed_keys(session_dir):
 def archive_failed_capture_for_rerun(session_dir, manifest_row):
     """Before re-running a FAILED (row, device, condition, replicate),
     rename its existing capture and associated files (pcap, afh.csv,
-    rosbag dir) out of the way first. No-retry rows (2/3/4/5/6) always
-    reuse the same capture filename with no attempt suffix (see
-    load_completed_keys's docstring) -- without this, do_run's rerun
-    would silently overwrite the original failed evidence rather than
-    sitting alongside it. Best-effort: a rename failure just logs a
-    warning and continues -- that one file's old copy would then be
-    overwritten by the rerun (the same risk as not having this safeguard
-    at all), but it shouldn't block the rerun itself."""
+    rosbag dir) out of the way first: no-retry rows reuse the same capture
+    filename. Best-effort: a rename failure logs a warning and continues."""
     # No early return when the capture itself is missing: a leftover
     # rosbag dir alone still makes the rerun's recorder exit immediately.
     capture_file = session_dir / manifest_row["capture_file"]
@@ -185,8 +161,8 @@ def _move_run_outputs(capture_file, tag, why):
     group is taken, the whole group gets <tag>_2, _3, ... so its files keep
     matching each other (the parser finds _afh.csv/_rosbag by capture stem).
     Path.rename silently replaces on Linux, and two --rerun-failed passes
-    over one run produce the same archive name -- that overwrote original
-    failed captures on 2026-10-05. Returns False if any rename failed."""
+    over one run produce the same archive name. Returns False if any
+    rename failed."""
     base = f"{capture_file.stem}_{tag}"
     stem, n = base, 2
     while any(capture_file.with_name(stem + t).exists() for t in RUN_OUTPUT_TAILS):
@@ -236,16 +212,9 @@ def prepare_rerun_failed(session_dir, completed):
     treats them as not yet done and re-attempts them. Returns `completed`
     unchanged if nothing is recorded as FAILED.
 
-    Deliberately does NOT filter by failure_kind or row: for no-retry rows
-    (2/3/4/5/6), a FAILED result is often ITSELF the intended data point
-    (interference causing a real disconnect, or -- since 2026-09-24's
-    evaluate_run_result redesign -- specifically the runs that DIDN'T match
-    "ran as expected"), not something to blindly retry away. Re-running one
-    of those means deliberately discarding that recorded outcome for a
-    fresh attempt -- this function makes that possible and preserves the
-    original evidence, but the decision to invoke --rerun-failed on an
-    interference row's results is the operator's, not something this
-    silently assumes is always correct."""
+    Does not filter by failure_kind or row: for no-retry rows a FAILED
+    result can be the intended data point, so re-running it is the
+    operator's decision; the original captures are kept."""
     failed_keys = load_failed_keys(session_dir)
     if not failed_keys:
         log.info("--rerun-failed: nothing recorded as FAILED, nothing to do")
@@ -272,10 +241,8 @@ def _set_manifest_verdict(session_dir, capture_file_name, start_time, status, er
     """Rewrite the status/error of this run's manifest row with the verdict
     reached after the capture was parsed. The row is appended before that
     (so it survives a crash mid-verification) with the provisional status
-    from the run itself; without this, a run that failed its link check
-    (e.g. a baseline disconnect) stayed PASSED in manifest.csv even though
-    results.csv said FAILED -- so `run --resume` skipped it as done and
-    `--rerun-failed` never saw it (2026-10-01, row1 Corsano calibration)."""
+    from the run itself, so `run --resume` and `--rerun-failed` see the
+    final verdict."""
     path = manifest_path(session_dir)
     if not path.exists():
         return

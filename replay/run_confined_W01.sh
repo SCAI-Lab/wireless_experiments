@@ -4,7 +4,7 @@
 # so the k = 0 row of the replay table covers the same ten runs as Table II
 # (k = 0 and confined use the same channel map and are pooled there). Same
 # bridge config, window and patient suffix as run_e2e.sh's sweep_W0.1, into the
-# same tag: the 17 runs already there are not touched (--only). ~27 min.
+# same tag; the tag's other runs are not touched (--only). ~27 min.
 #
 # Needs: MEDWEAR_USERNAME, MEDWEAR_PASSWORD (write access to $PROJECT), from the
 # environment or from .replay_credentials (see setup_replay_user.sh).

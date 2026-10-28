@@ -34,28 +34,17 @@ def stop_btmon(proc):
 
 
 # =============================================================================
-# rosbag recording -- ALL topics, one bag PER RUN (same granularity as
-# start_btmon/start_ble_sniffer/start_afh_poller, all of which are already
-# per-run, not per-session), not one long rolling session-spanning
-# recording: a single run is already duration-bounded by the row's own
-# config (300s/1800s/etc), so there's no giant-file problem to solve at
-# that scope, and one bag per run keeps rosbag data lined up 1:1 with each
-# run's own .btsnoop/afh.csv/manifest row, without needing to slice a
-# multi-hour session-wide bag back apart later to find one run's data.
-# Started/stopped inside _attempt_run, same lifecycle as start_btmon.
+# rosbag recording: all topics, one bag per run (like the btsnoop and AFH
+# captures), started and stopped inside _attempt_run.
 # =============================================================================
 
 
 def start_rosbag_recording(out_dir):
     """Start `ros2 bag record -a` (every topic currently visible) for one
-    run, no duration limit -- each run is already bounded by its own
-    planned duration, so there's nothing to split. Writes into out_dir (a
-    bag DIRECTORY: metadata.yaml plus a storage file) -- ros2 bag record
-    refuses to write into an already-existing directory, so out_dir must
-    not exist yet. Returns None (never raises) if `ros2` isn't on PATH or
-    the recorder exits immediately -- rosbag capture is a best-effort
-    supplement to the BLE/HCI-level captures the run already relies on,
-    not something that should abort a real chamber run."""
+    run, without a duration limit. Writes the bag directory out_dir, which
+    must not exist yet. Returns None (never raises) if `ros2` isn't on PATH
+    or the recorder exits immediately: the bag is best-effort and never
+    aborts a run."""
     log.info(f"  -> starting rosbag recording (all topics) -> {out_dir}")
     cmd = ["ros2", "bag", "record", "-a", "-o", str(out_dir)]
     try:
@@ -79,10 +68,8 @@ def start_rosbag_recording(out_dir):
 
 
 def stop_rosbag_recording(proc):
-    """SIGINT (not SIGTERM/kill) so it can flush and finalize its storage
-    file and metadata.yaml -- an abrupt kill risks an unreadable/corrupt
-    bag. Longer timeout than stop_btmon's since flushing a run's worth of
-    accumulated topics (up to 30min for Row 4) takes real time."""
+    """SIGINT (not SIGTERM/kill) so it can finalize its storage file and
+    metadata.yaml; a longer timeout than stop_btmon's for long runs."""
     if proc is None:
         return
     log.info(f"  -> stopping rosbag recorder (pid {proc.pid})")
@@ -101,10 +88,8 @@ def stop_rosbag_recording(proc):
 
 
 # =============================================================================
-# BLE sniffer (Nordic nRF Sniffer for Bluetooth LE) -- optional, physical
-# over-the-air capture, separate from btmon's HCI-level view of our own
-# controller. See ble_sniffer in config.yaml for what this does and doesn't
-# cover.
+# BLE sniffer (Nordic nRF Sniffer for Bluetooth LE): optional over-the-air
+# capture, separate from btmon's HCI view. See ble_sniffer in config.yaml.
 # =============================================================================
 
 
@@ -124,7 +109,7 @@ def start_ble_sniffer(cfg, mac_address, pcap_path):
     """Launch the Nordic sniffer as a background process capturing to
     pcap_path, following the given device's advertising traffic. Returns
     the Popen handle, or None if sniffing is disabled/unavailable (never
-    raises -- a missing dongle shouldn't fail the actual test)."""
+    raises)."""
     sniffer_cfg = cfg.get("ble_sniffer") or {}
     if not sniffer_cfg.get("enabled"):
         return None
@@ -139,8 +124,7 @@ def start_ble_sniffer(cfg, mac_address, pcap_path):
     if not binary:
         log.warning("  -> nrfutil-ble-sniffer not found, skipping over-the-air capture")
         return None
-    # The H10's address is public; following it as "random" captured zero of
-    # its packets (2026-09-28 reconnect regression). Per-device, default random.
+    # Address type per device (default random); the H10's is public.
     address_type = next(
         (d.get("address_type", "random") for d in cfg.get("devices", [])
          if (d.get("mac_address") or "").upper() == (mac_address or "").upper()),
@@ -175,8 +159,8 @@ def start_ble_sniffer(cfg, mac_address, pcap_path):
 
 
 def stop_ble_sniffer(proc):
-    """Stop a sniffer started by start_ble_sniffer(). SIGTERM confirmed (by
-    direct testing) to flush and close the pcap file cleanly."""
+    """Stop a sniffer started by start_ble_sniffer(); SIGTERM closes the
+    pcap file cleanly."""
     if proc is None:
         return
     log.info(f"  -> stopping BLE sniffer (pid {proc.pid})")
@@ -204,12 +188,9 @@ EMPTY_SNIFFER_METRICS = {
 
 def parse_sniffer_pcap(pcap_path, mac_address):
     """Extract advertising-channel over-the-air metrics for one device from
-    a Nordic sniffer capture, via tshark. This is real, physically measured
-    CRC/RSSI data -- btmon can never show this, since it only reports what
-    OUR OWN controller successfully received, not what was actually
-    transmitted over the air. Covers advertising channels (37/38/39) only;
-    see the module docstring above for why the data connection's channels
-    aren't covered. Returns EMPTY_SNIFFER_METRICS (all None) if the pcap is
+    a Nordic sniffer capture, via tshark: over-the-air CRC/RSSI, which btmon
+    (our own controller's view) cannot show. Advertising channels (37/38/39)
+    only. Returns EMPTY_SNIFFER_METRICS (all None) if the pcap is
     missing, empty, or tshark isn't available -- never raises."""
     if not mac_address or not pcap_path or not Path(pcap_path).exists():
         return dict(EMPTY_SNIFFER_METRICS)

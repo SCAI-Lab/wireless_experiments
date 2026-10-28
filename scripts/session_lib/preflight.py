@@ -44,53 +44,23 @@ from .drivers import (
 
 def kill_stray_driver_processes(cfg):
     """Preflight: find and kill any configured device's driver that's
-    ALREADY running before this session starts one of its own -- a stray,
-    already-running driver contending for the same physical BLE connection
-    can silently corrupt results (a real, practical risk: identified while
-    investigating an otherwise-unexplained progressively-worsening pattern
-    across reps during live testing, 2026-09-23 -- that specific case was
-    ruled out, but the risk itself is real regardless).
+    ALREADY running before this session starts one of its own: it would
+    contend for the same BLE connection.
 
-    Matches on each device's own launch_cmd appearing (as a substring/
-    regex) in another process's command line, via `pgrep -af` -- pgrep
-    excludes its own PID from results by default, so this doesn't
-    self-match. Matching on the full launch_cmd rather than just the MAC
-    address matters: an earlier version matched on MAC address alone and
-    false-positived on this session's OWN legitimate BLE sniffer process
-    (nrfutil-ble-sniffer ... --follow <mac> ...), which also carries the
-    device's MAC in its own args for an unrelated reason.
-
-    Kills automatically (SIGTERM, then SIGKILL if still alive after a
-    short wait) rather than just warning -- anything this matches is
-    necessarily debris from an earlier, uncleanly-ended run (this check
-    runs before this session's own driver processes exist, so it can never
-    match one of THIS session's own), never something a live session
-    depends on. Also explicitly disconnects the device from BlueZ
-    afterward, same as the end of every normal run -- killing the process
-    alone doesn't release a bonded device's background connection. Raises
-    StrayProcessError only if a process refuses to die even after
-    SIGKILL -- that's a real, unusual failure worth aborting for, not
-    something to silently paper over."""
+    Matches each device's driver arguments in other processes' command
+    lines via `pgrep -af` (which excludes its own PID). Kills automatically
+    (SIGTERM, then SIGKILL): this runs before the session's own drivers
+    exist, so anything matched is left over from an earlier run. Then
+    disconnects the device from BlueZ, as at the end of every run. Raises
+    StrayProcessError only if a process survives SIGKILL."""
     for device in cfg["devices"]:
         launch_cmd = device.get("launch_cmd")
         if not launch_cmd:
             continue
-        # Match on "--mac-address-or-name <MAC> ..." rather than the full
-        # launch_cmd -- confirmed via real orphaned processes (2026-09-23)
-        # that `ros2 run <pkg> <exe> ...` spawns the actual driver as a
-        # CHILD process whose own argv drops the "ros2 run <pkg>" prefix
-        # entirely (it's just ".../<exe> --mac-address-or-name ..."), so
-        # matching the full launch_cmd string only caught the wrapper,
-        # leaving the real driver process (the one actually holding the
-        # BLE connection) alive and unkilled. The "--mac-address-or-name
-        # <MAC>" suffix is present in both the wrapper's and the child's
-        # argv, and -- unlike the MAC address alone -- doesn't collide
-        # with the BLE sniffer's unrelated "--follow <MAC> random" flag.
-        # Only "--mac-address-or-name <MAC>" itself is matched, not the
-        # flags after it: on 2026-09-30 Polar's launch_cmd had a trailing
-        # space, the running driver's argv didn't, so pgrep matched nothing
-        # and a 14h-old driver kept the H10 connected into the sanity check
-        # (reported there as a misleading hcitool-permission failure).
+        # Match "--mac-address-or-name <MAC>" only: `ros2 run <pkg> <exe>`
+        # spawns the driver as a child whose argv lacks the "ros2 run"
+        # prefix, and the MAC alone would also match the BLE sniffer's
+        # "--follow <MAC>".
         parts = shlex.split(launch_cmd)
         marker = "--mac-address-or-name"
         if marker in parts and parts.index(marker) + 1 < len(parts):
@@ -152,34 +122,12 @@ def kill_stray_driver_processes(cfg):
 def check_devices_unbonded(cfg, timeout_s=10.0):
     """Pre-flight: log which configured devices are bonded on this host.
 
-    Informational only. A bond is not itself a fault -- the Corsano watch is
-    legitimately bonded and encrypts fine -- so the real detector lives in
-    evaluate_run_result(), which fails a run when its capture shows an
-    encryption handshake that did not succeed. This just puts the host's
-    pairing state in the session log next to everything else, so the verdict
-    is easy to interpret after the fact.
-
-    A bond that the sensor no longer honours is silently fatal AND
-    mis-attributed. BlueZ re-uses the stored LTK on every connection
-    (`LE Start Encryption`); if the sensor has forgotten its side, the
-    handshake goes unanswered and the link dies on its own supervision
-    timeout. The Disconnect Complete then reports reason 0x08, so the run
-    lands in results.csv as an ordinary supervision timeout --
-    indistinguishable from the interference-induced link loss these tests
-    exist to measure, and BlueZ's own "Authentication Failure (0x05)"
-    appears only on the disconnect command it sends afterwards, which the
-    controller rejects because the handle is already gone.
-
-    Confirmed 2026-09-29: replacing the Polar H10's battery cleared the bond
-    on the strap while the host kept its key, and every connection died
-    6.3s in (the negotiated 6000ms timeout) with zero samples received. The
-    baseline row failed with "3 unexpected disconnect(s)" and nothing in the
-    metrics pointed at pairing. Cheap to check, so check it: the drivers do
-    not need a bond (they re-subscribe to notifications on every reconnect).
-
-    Note this can appear mid-project without anyone pairing by hand --
-    start_pairing_agent() auto-accepts pairing requests, so a bond can be
-    created silently during a session.
+    Informational only: a bond is not itself a fault (the Corsano is bonded
+    and encrypts fine). evaluate_run_result() fails a run whose capture
+    shows a failed encryption handshake, which happens when the sensor has
+    forgotten a bond the host still uses (the link then dies with reason
+    0x08, like interference). The drivers do not need a bond, and
+    start_pairing_agent() can create one during a session.
     """
     bonded = []
     for device in cfg["devices"]:
@@ -228,12 +176,8 @@ def check_devices_ready(cfg, probe_duration_s=8, check_afh=True):
     automatically before any test.
 
     check_afh=True also attempts one real LE Read Channel Map on the first
-    device's probe connection, and ABORTS (not just warns) if it fails --
-    the channel map is now central to explaining the session's results (is
-    AFH routing around WiFi-busy channels, or not?), so a silent empty-CSV
-    degradation here would be far more misleading than for the other
-    best-effort metrics (sniffer, QBSS), which don't carry the same
-    explanatory weight."""
+    device's probe connection, and ABORTS (not just warns) if it fails: the
+    session's results depend on the channel map."""
     devices = cfg["devices"]
     device_names = [d["name"] for d in devices]
     log.info(
@@ -268,11 +212,7 @@ def check_devices_ready(cfg, probe_duration_s=8, check_afh=True):
         afh_watcher = None
         if not afh_verified and check_afh and device.get("mac_address"):
             # Start watching BEFORE connecting: the LE Connection Complete
-            # event only fires once, right as the connection is made -- a
-            # watcher started AFTER the driver already connected (the
-            # original bug here) silently finds nothing, confirmed by
-            # direct testing (2026-09-23), since the one-time event has
-            # already passed by the time it starts listening.
+            # event fires only once, as the connection is made.
             handle_holder = [None]
             afh_proc_holder = [None]
             afh_stop_event = threading.Event()
@@ -292,11 +232,8 @@ def check_devices_ready(cfg, probe_duration_s=8, check_afh=True):
             afh_watcher = (afh_thread, afh_stop_event, handle_holder, afh_proc_holder)
 
         def _stop_afh_watcher(watcher):
-            # Terminate the underlying btmon process directly rather than
-            # just setting stop_event -- it can be blocked in a readline()
-            # that won't return until btmon produces another line, which
-            # may never happen before any join() timeout on an otherwise
-            # quiet hci0 (confirmed via real sessions, 2026-09-22).
+            # Terminate the underlying btmon directly: it can be blocked in
+            # readline() (see _btmon_watch_for_handle).
             thread, stop_evt, _handle_holder, proc_holder = watcher
             stop_evt.set()
             if proc_holder[0] is not None:
@@ -395,9 +332,8 @@ def check_bt_controller_ready(controller, timeout_s=5):
 
 def check_ble_sniffer_ready(cfg):
     """If ble_sniffer is enabled, require the dongle and nrfutil-ble-sniffer
-    to be present before the session starts. start_ble_sniffer only warns per
-    run, which let 20261006_000828 run 99 of 104 attempts with no OTA capture
-    unnoticed. Set ble_sniffer.enabled: false to run without it on purpose."""
+    to be present before the session starts (start_ble_sniffer only warns
+    per run). Set ble_sniffer.enabled: false to run without it."""
     sniffer_cfg = cfg.get("ble_sniffer") or {}
     if not sniffer_cfg.get("enabled"):
         log.info("  -> BLE sniffer disabled in config, no over-the-air capture")
@@ -431,12 +367,7 @@ def check_wifi_scan_ready(cfg, need_qbss, attempts=3):
     """Preflight: run one real `iw scan` on each WiFi adapter the session
     will poll (ambient_scan.iface for channel occupancy, and qbss_iface when
     rows using QBSS will run) and ABORT if it can't produce the data those
-    pollers record. Both pollers are best-effort by design -- a failed scan
-    is skipped and logged at DEBUG only -- so without this a broken adapter
-    costs a whole session's occupancy/QBSS data without a single warning:
-    confirmed on 2026-09-30 (session 20260930_105034), where the USB adapter
-    had gone admin-DOWN between sessions and every scan failed with
-    "Network is down (-100)": 0 channel_occupancy.csv rows, 0 QBSS samples.
+    pollers record: both pollers skip a failed scan and log it at DEBUG only.
 
     Unmanages the interface first, exactly as the pollers do, so this tests
     the same state they will run in. Retries "Device or resource busy"
@@ -572,10 +503,9 @@ def _scan_bsses(scan_stdout):
 
 
 def check_no_foreign_wifi(cfg, session_dir, test_mode, scans=2):
-    """Chamber RF check (added 2026-10-07): no WiFi AP other than the test AP
-    may be on a channel overlapping the test channel. Session 20261006_173125
-    saw 2 foreign APs on channel 6 and 13-25% airtime with NO load, so its
-    "no load" conditions weren't interference-free.
+    """Chamber RF check: no WiFi AP other than the test AP may be on a
+    channel overlapping the test channel, or the "no load" conditions
+    aren't interference-free.
 
     A 20 MHz channel-6 signal spreads into channels 3-9 (any AP within 3
     channels overlaps it), so those are checked: config
@@ -761,24 +691,13 @@ def measure_max_throughput(iperf_cfg, duration_s=10, timeout_s=None):
     """Run a real iperf3 throughput test from the Pi to the server through the
     actual link, to get a fresh baseline for deriving Row 2's duty-cycle
     bitrates -- instead of relying on a number hand-recorded from a past dry
-    run, which can go stale as the RF environment changes day to day.
+    run.
 
-    UDP with -b 0 (send as fast as possible), matching the traffic mode
-    actually used to apply the duty-cycle load (see run_iperf_background in
-    chamber_session.py) -- measuring the ceiling over TCP while applying
-    load over UDP would size "100%" against the wrong link characteristic
-    (TCP's ceiling differs from UDP's: different congestion control,
-    aggregation, ACK overhead). The reported bits_per_second is what was
-    actually RECEIVED, so it already reflects any loss at saturation --
-    exactly "how much can this link really deliver," not what was offered.
-    -O 2 runs a 2 s warm-up BEFORE the -t window and leaves it out of the
-    average, so the reported figure covers the full duration_s.
-
-    NOTE: expected_max_mbps in config.yaml was originally recorded from a
-    TCP measurement -- since this now measures UDP instead, that number
-    needs re-validating against a fresh UDP measurement (e.g. via
-    --test-mode, which only warns instead of aborting on a mismatch) before
-    trusting max_mbps_tolerance_pct's check at the next real session."""
+    UDP with -b 0 (send as fast as possible), the traffic mode used to apply
+    the load (see run_iperf_background in chamber_session.py). The reported
+    bits_per_second is what was RECEIVED, so it reflects any loss at
+    saturation. -O 2 runs a 2 s warm-up before the -t window and leaves it
+    out of the average."""
     ssh_target = f"{iperf_cfg['pi_user']}@{iperf_cfg['pi_host']}"
     payload = iperf_cfg.get("udp_payload_bytes", 1200)
     remote_cmd = (
@@ -824,18 +743,11 @@ def measure_max_throughput(iperf_cfg, duration_s=10, timeout_s=None):
 
 
 def check_throughput_baseline(measured_mbps, iperf_cfg, strict=True):
-    """Compare a freshly measured throughput against the expected anechoic-
-    chamber baseline recorded during the pre-day dry run. This link's max
-    throughput should be stable and repeatable in a controlled chamber, so a
-    large deviation usually means something's actually wrong (AP on the wrong
-    channel, chamber door/seal not closed, a cable fault) rather than normal
-    day-to-day variance -- worth stopping for rather than silently deriving
-    duty-cycle bitrates from a measurement that doesn't reflect the intended
-    controlled environment.
+    """Compare a freshly measured throughput against the expected chamber
+    baseline (expected_max_mbps). In the chamber a large deviation means
+    something is wrong (AP on the wrong channel, door open, cable fault).
 
-    strict=False (test mode) downgrades a baseline mismatch to a warning
-    instead of raising -- for dry runs outside the chamber, where ambient RF
-    won't match expected_max_mbps by design, not because anything is wrong."""
+    strict=False (test mode) downgrades a mismatch to a warning."""
     expected = iperf_cfg.get("expected_max_mbps")
     if expected is None:
         log.warning(
@@ -871,10 +783,8 @@ _LOGGED_MAX_RE = re.compile(r"derived bitrate_by_duty from measured ([\d.]+) Mbi
 
 def _saved_max_throughput(session_dir):
     """(max_mbps, source) a session already measured, or None. Prefers
-    max_throughput.json (written by resolve_duty_bitrates); for sessions
-    started before that file existed (2026-10-06), falls back to the FIRST
-    measurement logged in session.log -- the one the session's earliest
-    runs actually used."""
+    max_throughput.json (written by resolve_duty_bitrates); without it,
+    falls back to the FIRST measurement logged in session.log."""
     if session_dir is None:
         return None
     path = Path(session_dir) / MAX_THROUGHPUT_FILE
@@ -907,9 +817,7 @@ def resolve_duty_bitrates(cfg, strict=True, session_dir=None):
 
     With session_dir, the max is measured once per session and saved there
     (max_throughput.json); a --resume reuses it instead of measuring again,
-    so every run in a session gets the same bitrates. Before 2026-10-06 each
-    resume re-measured, so one session mixed e.g. 56.0 and 61.2 Mbit/s as
-    "100%" (20261005_110316 had 7 different values)."""
+    so every run in a session gets the same bitrates."""
     r = cfg["row2_duty_cycle"]
     duty_levels = sorted({d for d in r["duty_levels"] if d > 0})
     if not duty_levels:
@@ -937,9 +845,7 @@ def resolve_duty_bitrates(cfg, strict=True, session_dir=None):
             f"the session gets the same bitrates"
         )
     else:
-        # Median of several measurements, not one: a single 10 s test varied
-        # 54.8-61.2 Mbit/s between sessions (2026-10-01..06), and every load
-        # level scales with it. The median ignores one outlier run.
+        # Median of several measurements: every load level scales with it.
         runs = int(iperf_cfg.get("max_throughput_runs", 3))
         duration_s = int(iperf_cfg.get("max_throughput_duration_s", 30))
         samples = [

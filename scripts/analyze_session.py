@@ -85,10 +85,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-SCRIPT_VERSION = "1.4.3"   # 1.4.3: (a)/(b) subfigure labels on the channel maps (IEEE multipart rule)
-# 1.4.2: IEEE figure style at print size, fig_s_per_run, guards in the censored M(D) curve
-# 1.4.1: censoring-aware M(D) (samples acquired in [onset, end-D]); 1.4.0: last ACL fragment
-# 1.3.0: end-to-end age M(D), runaway/backlog, nRF-sniffer link layer, pooled runaway + framing + channel tables
+SCRIPT_VERSION = "1.4.3"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # scripts/..
 
 # ----------------------------------------------------------------------------
@@ -296,7 +293,7 @@ def parse_capture(path, device):
         elif op in (ACL_TX, ACL_RX) and len(p) >= 4:
             conn = int.from_bytes(p[0:2], "little") & 0x0FFF
             if (int.from_bytes(p[0:2], "little") >> 12) & 3 == 1:  # continuation fragment: no L2CAP header
-                # 1.4.0: an ATT PDU reaches the host only with its last ACL
+                # An ATT PDU reaches the host only with its last ACL
                 # fragment; under interference that can be hundreds of ms
                 # after the first (link-layer retransmissions), so the
                 # notification is stamped when it is complete.
@@ -469,9 +466,9 @@ def lower_envelope_detrend(t_host, off, drift=None):
 
 
 def session_drift(sdir, manifest):
-    """Median clock drift over a session's Polar no-load runs (~220 ppm on
-    20261007, ~0 on 20261008: constant within a session, not across them).
-    Gym sessions have no no-load runs: their AFH-free runs are used instead.
+    """Median clock drift over a session's Polar no-load runs (constant
+    within a session, not across sessions). Gym sessions have no no-load
+    runs: their AFH-free runs are used instead.
     Returns (drift or None, per-run slopes in ppm)."""
     ref = []
     for m in manifest:
@@ -498,9 +495,8 @@ def session_drift(sdir, manifest):
 def reconnect_breakdown(ev, device, wend, losses, mac):
     """Separate "the link came back" from "the data came back".
 
-    A reconnect count alone is misleading: row3 max_load rep1 (2026-09-28)
-    logged 24 successful Connection Completes and still delivered 1.1% of its
-    ECG, all of it from the first connection. Here every connection gets its
+    A reconnect count alone is misleading (a run can reconnect many times
+    and deliver almost no data). Here every connection gets its
     own time-to-first-sample and samples per connected second, and every link
     loss gets the times until the sensor advertised again (any / connectable),
     the host tried to connect, the link was back, and data was back.

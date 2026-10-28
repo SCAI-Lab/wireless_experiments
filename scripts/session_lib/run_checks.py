@@ -20,43 +20,25 @@ from .logs import log
 MIN_CONNECTED_FRACTION = 0.9
 
 # A run with injected WiFi load only counts if iperf3's own end-of-run
-# average reached at least this fraction of its target bitrate (runs that
-# held their load reached 99-100% on 2026-09-26/30). iperf3 reports one
-# average, so a load that stops partway shows up as a proportionally low
+# average reached at least this fraction of its target bitrate. iperf3
+# reports one average, so a load that stops partway shows up as a
+# proportionally low
 # value -- or, when ssh/iperf3 dies, as no parseable output at all.
 MIN_INDUCED_LOAD_FRACTION = 0.8
 
 # Conditions with no injected interference (no iperf3 traffic, no generic
 # BLE peripherals), so once the sensor connects it's expected to stay
-# connected for the rest of the run. Any disconnect there is a real anomaly
-# worth labeling directly -- not just checked against the looser
-# MIN_CONNECTED_FRACTION threshold above, which a quick disconnect/reconnect
-# could still slip under. This is distinct from Row 2/3's non-zero-load
-# conditions, where interference is deliberately present and some
-# instability is the thing being measured.
+# connected for the rest of the run: any disconnect there is labelled
+# directly, not just checked against MIN_CONNECTED_FRACTION.
 #
 # Row 1's two sub-runs (see run_test1_connection_interval) are both
-# no-interference by construction. Row 2/5's 0%-duty conditions are the
-# equivalent for those rows. This set was previously {("row1", "baseline")}
-# -- stale after Row 1 was restructured into calibration/renegotiation_watch,
-# which meant this check silently never fired for Row 1 at all.
+# no-interference; so are the 0%-duty conditions of Rows 2/5 and the
+# forced-channel runs without load. Rows: 3 = forced_channel,
+# 4 = endurance, 5 = headroom_sweep, 6 = contention (see config.yaml).
 #
-# Row labels below were re-fixed 2026-09-24, then swapped again 2026-09-25
-# when headroom sweep and contention traded row numbers (headroom sweep is
-# now Row 5 and runs by default under --row all; contention is now Row 6
-# and stays an opt-in extra -- see run_test5_headroom_sweep's docstring in
-# chamber_session.py). Today's layout: Row 3 = forced_channel, Row 4 =
-# endurance, Row 5 = headroom_sweep, Row 6 = contention (see config.yaml).
-# Also added forced_channel_no_load, which belongs here and was simply
-# missing: zero WiFi load is zero WiFi load regardless of the forced
-# channel map, and the manuscript's own finding for it is "streamed for
-# the full duration in all three runs" -- a real baseline, not covered by
-# EXPECTED_INSTABILITY_ROW_CONDITIONS below.
-#
-# For Row 2/3/6 (retry_on_fail=False), landing in this set only adds a
-# stricter data LABEL -- it can no longer trigger a retry or abort the
-# session (see do_run's retry_on_fail). For Row 1 (retry_on_fail=True), it
-# still drives the original retry+abort-on-failure behavior.
+# For rows with retry_on_fail=False, this set only adds a stricter label;
+# for Row 1 (retry_on_fail=True) a failure is retried and can abort the
+# session.
 BASELINE_ROW_CONDITIONS = {
     ("row1", "calibration"),
     ("row1", "renegotiation_watch"),
@@ -67,93 +49,52 @@ BASELINE_ROW_CONDITIONS = {
     ("row4", "duty0pct_long"),
     ("row6", "contention_0"),
     ("row6", "contention_0_bracket"),
-    # Row 5 headroom sweep's no-load control (one small mask, no WiFi load)
-    # -- same "a small mask alone shouldn't destabilize anything" reasoning
-    # as forced_channel_no_load above, just at whichever k config.yaml's
-    # row5_headroom_sweep.no_load_control_k picks. Only k=2 exists today;
-    # add the corresponding condition name here if that config value changes.
+    # Row 5 headroom sweep's no-load control (one small mask, no WiFi load),
+    # at config.yaml's row5_headroom_sweep.no_load_control_k (k=2).
     ("row5", "headroom_k2_no_load"),
 }
 
-# Conditions where WiFi load is deliberately combined with NO AFH escape
-# route (forced_channels, see FORCED_CHANNEL_RANGE) -- the mechanism test's
-# whole point, and by now (2026-09-24) a repeatedly-confirmed finding
-# across sessions, not a hypothesis: the link is EXPECTED to degrade or
-# collapse here (Table tab:forced in the manuscript reports these
-# disconnects as the result, not as failures). Per the user's own framing:
-# under these conditions "we do expect disconnects... the test should not
-# fail but rather pass." See evaluate_run_result for exactly what "ran as
-# expected" means here -- it's not simply "always PASS": a run that never
-# engaged with the link at all (0 connected time AND 0 attempts) is still
-# a real infrastructure failure needing a rerun (the manuscript excluded
-# exactly this case for its own full-load replicates: "followed a failed
-# host-side disconnect and no connection attempt was recorded"), not a
-# valid instance of the phenomenon being measured.
+# Conditions where WiFi load is combined with a restricted channel map
+# (forced_channels, see FORCED_CHANNEL_RANGE): the link may degrade or drop,
+# and that is the result, not a failure. See evaluate_run_result: a run
+# that never engaged with the link (0 connected time AND 0 attempts) still
+# fails.
 #
-# Deliberately NOT including Row 2's non-zero-duty conditions here, even
-# though WiFi load is also present there: Row 2's established, repeatedly-
-# confirmed finding (until a 2026-09-24 session showed real Corsano
-# disconnects at duty75/100pct, still unexplained) is the OPPOSITE --
-# AFH-free links are expected to stay up even at 100% load. Reclassifying
-# Row 2 here would mask that anomaly as "expected" instead of flagging it
-# for investigation, which is exactly backwards.
+# Row 2's loaded conditions are not included: AFH-free links are expected
+# to stay up, so a disconnect there is flagged.
 EXPECTED_INSTABILITY_ROW_CONDITIONS = {
     ("row3", "forced_channel_duty25pct"),
     ("row3", "forced_channel_duty50pct"),
     ("row3", "forced_channel_duty75pct"),
     ("row3", "forced_channel_max_load"),
     # Row 5 headroom sweep's WiFi-loaded conditions (k=0/2/4/8 clean
-    # channels, all at load_duty_pct% load) -- same principle as Row 3
-    # above, generalized: a forced/restricted channel classification plus
-    # WiFi load makes some amount of instability a valid outcome to
-    # measure, not a test failure, REGARDLESS of k. This is deliberately
-    # NOT narrowed to just k=0 (the one condition with an already-confirmed
-    # collapse pattern): whether k=2/4/8 also degrades, or the controller
-    # cleanly escapes onto the added clean channels instead, is the open
-    # question this row exists to answer -- either outcome is valid data,
-    # so neither should be labeled a failure. Only truly zero engagement
-    # (0 connected time AND 0 attempts, see evaluate_run_result) still
-    # fails, same as Row 3.
+    # channels, all at load_duty_pct% load), for every k.
     ("row5", "headroom_k0_duty75pct"),
     ("row5", "headroom_k2_duty75pct"),
     ("row5", "headroom_k4_duty75pct"),
     ("row5", "headroom_k8_duty75pct"),
-    # Row 8: Row 5's sweep at 100% load (added 2026-10-06) -- same
-    # reasoning. Add a line here if row8_headroom_saturation.k_values grows.
+    # Row 8: Row 5's sweep at 100% load (row8_headroom_saturation.k_values).
     ("row8", "headroom_k2_duty100pct"),
     ("row8", "headroom_k8_duty100pct"),
-    # Row 7's scan-interference diagnostic -- same forced_channel_duty50pct
-    # setup as Row 3, just with the QBSS scanner toggled between reps. Both
-    # conditions force channels + load, so both need this classification --
-    # if scan_on turns out to be the actual cause of Row 3's collapses, its
-    # disconnects here are the confirming result, not a test failure.
+    # Row 7's scan-interference diagnostic: Row 3's forced_channel_duty50pct
+    # setup with the QBSS scanner toggled between reps.
     ("row7", "scan_on"),
     ("row7", "scan_off"),
 }
 
 # Rows whose EVERY condition (including no-load ones) deliberately forces a
 # host channel classification -- see FORCED_CHANNEL_RANGE / channel_masks.
-# Used below to know which rows' captures should NEVER show a forced
-# bitmap, so a leak can be detected instead of just prevented. Row 7 reuses
-# Row 3's exact FORCED_CHANNEL_RANGE bitmap for both its conditions, so it
-# belongs here too -- otherwise every Row 7 run would be misflagged as
-# channel-map contamination for legitimately showing the forced map it
-# itself set.
+# Captures of all other rows must never show a forced bitmap (leak
+# detection). Row 7 uses Row 3's FORCED_CHANNEL_RANGE for both conditions.
 FORCED_CHANNEL_ROWS = {"row3", "row5", "row7", "row8"}
 
 
 def _known_forced_channel_hex_signatures(cfg):
     """Exact 5-byte channel-map hex signatures of every host-forced
     classification this codebase ever sets: Row 3's fixed FORCED_CHANNEL_
-    RANGE, plus every k in Row 5's config-driven channel_masks. Used to
-    detect contamination precisely -- matching the EXACT bitmap, not just
-    a similarly narrow channel COUNT, since real AFH under heavy WiFi load
-    can legitimately narrow to a similar count on its own (confirmed: ~15
-    channels for Corsano at 100% duty, AFH-free) without ever being
-    host-forced. The exact bitmap is what a leaked host classification
-    actually produces and what real adaptive narrowing essentially never
-    would, since it doesn't follow an arbitrary spread-out pattern like
-    Row 5's k=2/4/8 masks."""
+    RANGE, plus every k in Row 5's config-driven channel_masks. Contamination
+    is detected by the exact bitmap, not the channel count: AFH under heavy
+    WiFi load can narrow to a similar count on its own."""
     sigs = {_encode_channel_classification(FORCED_CHANNEL_RANGE).hex()}
     for channels in (cfg.get("channel_masks") or {}).values():
         sigs.add(_encode_channel_classification(channels).hex())
@@ -176,14 +117,10 @@ def aggregate_connection_rssi(afh_csv_path):
     """Summarize the connection RSSI already sampled every poll_interval_s
     by the AFH poller's _hcitool_read_rssi call (HCI Read RSSI on this
     run's own live connection handle -- see _afh_poll_loop's rssi_dbm
-    column) into avg/min/max for results.csv. This is the CENTRAL's own
-    view of the link (this controller's receiver, on the actual data
-    channel), as opposed to sniffer_adv_rssi_*, which is the Nordic
-    sniffer's OTA view of advertising-channel packets only -- the two
-    aren't interchangeable, and before this only the sniffer one made it
-    into results.csv at all, even though the central-side number was
-    already being collected into every run's own _afh.csv the whole time.
-    Returns EMPTY_CONNECTION_RSSI if the file is missing/unreadable or has
+    column) into avg/min/max for results.csv: the central's own view of the
+    link on the data channels, unlike sniffer_adv_rssi_* (the sniffer's
+    view of advertising packets). Returns EMPTY_CONNECTION_RSSI if the file
+    is missing/unreadable or has
     no valid samples (e.g. the connection never came up, or hcitool
     wasn't available -- see _hcitool_read_rssi)."""
     if not afh_csv_path.exists():
@@ -203,8 +140,7 @@ def aggregate_connection_rssi(afh_csv_path):
         except ValueError:
             continue
         # HCI Read RSSI returns 127 ("not available") while the link is down;
-        # valid readings are -127..+20 dBm. Averaging the sentinel in gave
-        # 20261006_000828 row3 Polar forced_channel_max_load rep2 +26.6 dBm.
+        # valid readings are -127..+20 dBm.
         if not HCI_RSSI_MIN_DBM <= value <= HCI_RSSI_MAX_DBM:
             continue
         values.append(value)
@@ -221,11 +157,8 @@ def aggregate_connection_rssi(afh_csv_path):
 def driver_git_version(driver_source_dir):
     """Best-effort 'driver version' for results.csv: the driver package's
     own git commit hash (short), +dirty appended if that source tree has
-    uncommitted local changes. package.xml's <version> in both ros4hc
-    driver packages is an unmaintained "0.0.0" placeholder (confirmed
-    2026-09-28), so it carries no real information -- the git state of the
-    actual source tree a run was launched against is the only thing that
-    really identifies which driver code produced that run's data. Returns
+    uncommitted local changes (package.xml's <version> is a "0.0.0"
+    placeholder). Returns
     None if driver_source_dir isn't configured, doesn't exist, or isn't
     inside a git repo -- never raises."""
     if not driver_source_dir or not Path(driver_source_dir).is_dir():
@@ -271,21 +204,14 @@ def check_data_published(device_cfg, rosbag_dir, parsed):
     """Problems with the sensor data a run's driver published, as a list of
     strings (empty = fine), or None if it couldn't be checked (no rosbag).
 
-    A link that stays up says nothing about whether the device was actually
-    measuring: on 2026-09-30/10-01 every baseline passed while the Polar sent
-    0 heart-rate values (no skin contact) and the Corsano's ACC/BioZ/stress
-    files hadn't grown for days -- the old Corsano driver republished the
-    same stale tail every poll, so its topics still had ~75 messages per run.
-    So two checks: each topic in the device's config.yaml expected_topics
-    must have >= 1 message, and for the Corsano the watch's own file
-    counters must have grown (parsed["corsano_new_sensor_data"]), which
-    catches stale republishing whatever driver version is installed.
+    A link that stays up says nothing about whether the device was
+    measuring, so two checks: each topic in the device's config.yaml
+    expected_topics must have >= 1 message, and for the Corsano the watch's
+    own file counters must have grown (parsed["corsano_new_sensor_data"]),
+    which catches a driver republishing stale data.
 
-    advisory_topics are checked the same way but only logged as a warning,
-    never a problem: the Polar's polar_hr (published only with skin contact)
-    moved there 2026-10-06, because in the chamber the strap isn't on skin
-    and HR then failed every baseline, though no result uses HR -- ECG/ACC
-    (still required) show data flow, and completeness comes from them."""
+    advisory_topics are checked the same way but only logged as a warning
+    (e.g. the Polar's polar_hr, published only with skin contact)."""
     expected = (device_cfg or {}).get("expected_topics") or []
     advisory = (device_cfg or {}).get("advisory_topics") or []
     problems = []
@@ -315,11 +241,8 @@ def extract_battery_pct_from_rosbag(rosbag_dir, topic):
     Never raises: gracefully returns None if rosbag2_py/rclpy/sensor_msgs
     aren't importable (ROS environment not sourced) too.
 
-    A missing topic here is often EXPECTED, not a failure -- the ros4hc
-    drivers only publish a battery topic when their own --publish-battery
-    is enabled (see config.yaml's devices[].battery_topic comments: on by
-    default for Corsano, explicitly disabled for Polar_H10 in this
-    project's current launch_cmd)."""
+    A missing topic is often expected: the drivers publish a battery topic
+    only with --publish-battery (see config.yaml's devices[].battery_topic)."""
     if not rosbag_dir or not topic or not Path(rosbag_dir).is_dir():
         return None
     try:
@@ -353,21 +276,12 @@ def check_channel_map_contamination(afh_csv_path, forced_signatures):
     hex EXACTLY matching a known host-forced classification, for a run that
     was never supposed to force one. Returns a description string if found,
     else None. Never raises -- a missing/unreadable file just means
-    nothing to check (best-effort, same as the AFH poller itself).
+    nothing to check.
 
-    Real, confirmed incident this exists for (2026-09-24): a Row 3 forced-
-    channel run was interrupted (the session was stopped, then resumed) and
-    its host classification -- persistent controller state, not tied to
-    any one process -- was never reset. It leaked into two subsequent
-    "AFH-free" Row 2 runs (Corsano duty50pct rep3, duty0pct_bracket), both
-    showing channel_map_hex=00f00f0000 (exactly FORCED_CHANNEL_RANGE) for
-    their entire duration. See the proactive reset in _attempt_run and the
-    block-level reset in chamber_session.py's forced-channel rows for the
-    prevention side of this fix -- this is the detection side, so a leak
-    that somehow still occurs (e.g. a future forced-channel row added
-    without going through those same guards) gets caught and excluded
-    automatically on the next parse, not just found by manual CSV
-    inspection."""
+    The host classification is persistent controller state, so an
+    interrupted forced-channel run can leave it set for later runs. This is
+    the detection side; _attempt_run and chamber_session.py's forced-channel
+    rows reset it."""
     if not afh_csv_path.exists():
         return None
     try:
@@ -391,49 +305,29 @@ def check_channel_map_contamination(afh_csv_path, forced_signatures):
 
 def evaluate_run_result(parsed, row_label, condition, planned_duration_s, data_problems=None):
     """Decide the real PASSED/FAILED verdict for one run from its parsed
-    capture. A driver process staying alive says nothing about whether the
-    BLE link itself stayed up, so this is the single source of truth for
-    that verdict -- shared between do_run's immediate post-run check (so a
-    real failure surfaces before the operator walks away) and do_parse's
-    end-of-session batch summary, so the two never drift apart.
+    capture: shared by do_run's immediate post-run check and do_parse's
+    end-of-session summary.
 
     Returns (status, error, reason_kind), where reason_kind is None on a
     pass, "baseline" for a baseline-stability failure, or "connectivity" for
-    the generic connected-time failure -- callers that need to distinguish
-    the two (e.g. for log message wording) use this instead of re-deriving
-    the same logic themselves.
+    the generic connected-time failure.
 
-    Note: for Row 2/3/5, do_run no longer retries or gates the session on
-    this verdict (see retry_on_fail in do_run) -- a FAILED here is just a
-    data annotation on that attempt, not something that triggers a retry or
-    aborts the session. It still matters for Row 1, where retry+abort-on-
-    failure remains the behavior (a Row 1 failure means the setup is
-    broken, not that interference is doing its job).
+    For rows with retry_on_fail=False a FAILED is only an annotation of
+    that attempt; for Row 1 it is retried and can abort the session.
 
-    PASS/FAIL means "ran as expected for this condition," not simply
-    "stayed connected" -- added 2026-09-24 per an explicit request: now
-    that several sessions have repeatedly confirmed what Row 3's forced-
-    channel-with-load conditions actually do (degrade or collapse, see
-    EXPECTED_INSTABILITY_ROW_CONDITIONS), marking that as FAILED just
-    because MIN_CONNECTED_FRACTION wasn't met mislabels the intended
-    result as an error. For those conditions specifically, this checks
-    only whether the run actually engaged with the link at all (some
-    connected time, or at least a real connection attempt) -- not how
-    little of the planned duration it stayed up. A run with truly nothing
-    (0 connected time AND 0 attempts) still fails: that's not "the
-    mechanism worked," it's "the test never ran," matching the
-    manuscript's own reasoning for excluding exactly that case."""
+    PASS/FAIL means "ran as expected for this condition", not "stayed
+    connected": for EXPECTED_INSTABILITY_ROW_CONDITIONS this checks only
+    that the run engaged with the link (some connected time, or a
+    connection attempt). A run with 0 connected time AND 0 attempts fails."""
     try:
         planned_s = float(planned_duration_s)
     except (TypeError, ValueError):
         planned_s = None
 
-    # Checked before anything else, including the expected-instability rows:
-    # The signature is attempts with NOT ONE success: interference kills some
-    # handshakes mid-flight too (09-28 max_load rep1: 1 success, 3 killed by RF
-    # with Status "Connection Timeout"), so "any failure" would condemn exactly
-    # the genuine degradation runs this session exists to capture. A host bond
-    # the sensor has forgotten never encrypts at all. See START_ENCRYPTION_RE.
+    # Checked before anything else, including the expected-instability rows.
+    # The signature is encryption attempts with NOT ONE success (interference
+    # also kills some handshakes): a host bond the sensor has forgotten never
+    # encrypts at all. See START_ENCRYPTION_RE.
     if parsed.get("n_encryption_attempts") and not parsed.get("n_encryption_successes"):
         return (
             "FAILED",

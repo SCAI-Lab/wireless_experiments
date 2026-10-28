@@ -7,27 +7,10 @@ POLAR_PMD_TYPE_MARKER = "fb005c82"  # PMD_CHAR2_UUID (ACC and ECG both notify he
 POLAR_HR_TYPE_MARKER = "2a37"  # standard Heart Rate Measurement characteristic
 POLAR_ACC_SAMPLING_FREQ_HZ = 200  # per PolarH10.py's ACC_SAMPLING_FREQ
 
-# Fallback for when Type: is absent -- same root cause already diagnosed
-# for Corsano much earlier in this project: on a reconnect to an already-
-# bonded device, BlueZ serves the GATT client a cached table instead of
-# re-running discovery over the air, so btmon has no UUID to resolve a
-# notification's Type: against (the ATT-layer Handle: field is always
-# present regardless, since that's what identifies the notification at
-# the protocol level, not something btmon has to separately resolve).
-# Found 2026-09-25: acc_pmd_frame_count/hr_rr_completeness_pct were
-# silently 0/blank on a real reconnect capture even though ~89k real PMD
-# samples and 163 real HR messages existed in that same run's rosbag --
-# the Type:-text match alone had been missing them this whole time.
-# These are real ATT attribute handles (device-firmware-fixed, NOT the
-# per-session ACL connection handle used elsewhere in this file), found by
-# tallying "Handle Value Notification" events by handle across three real
-# captures from this same physical Polar H10 and confirming volume/byte-
-# layout match (0x0032: 1996 notifications, data[0] in {0x00 ECG, 0x02
-# ACC}, matching PMD_CHAR2; 0x0010: 297 notifications, consistent with
-# 163 published /polar_hr messages once RR-absent notifications are
-# filtered out, matching the HR Measurement characteristic) -- stable
-# across all three runs checked, so treated as a firmware constant, same
-# as Corsano's handles.
+# Fallback for when Type: is absent: on a reconnect to a bonded device BlueZ
+# uses its cached GATT table, so btmon has no UUID for a notification, only
+# its ATT handle. These ATT attribute handles are fixed by the H10's
+# firmware (0x0032: PMD data, ECG and ACC; 0x0010: HR Measurement).
 POLAR_PMD_ATTRIBUTE_HANDLE = "0x0032"
 POLAR_HR_ATTRIBUTE_HANDLE = "0x0010"
 ATT_ATTRIBUTE_HANDLE_RE = re.compile(r"Handle:\s*(0x[0-9A-Fa-f]+)")
@@ -74,14 +57,9 @@ def _measured_sample_rate(pmd_frames, nominal_hz, min_pairs=10, max_deviation=0.
     n_samples / (last_ts - previous frame's last_ts) over back-to-back frame
     pairs (no frame lost in between). Uses only each frame's LAST-sample
     timestamp, which the sensor sends; first_ts is derived from the nominal
-    rate by the frame parsers, so it can't be used to measure the rate.
-
-    Measured 2026-09-30 on the H10: ACC 203.9 Hz (nominal 200), ECG 130.0 Hz
-    (nominal 130), on sensor and host clocks alike -- 245 s runs matched to
-    <1 s. Robust in starved runs too: the frames that do arrive come in
-    contiguous bursts (139 usable pairs in the worst Row 3 run). Falls back
-    to nominal_hz with too few pairs, or if the estimate is implausibly far
-    from nominal (a parsing problem, not a real rate)."""
+    rate by the frame parsers. The H10's ACC runs at about 203.9 Hz
+    (nominal 200), its ECG at 130 Hz. Falls back to nominal_hz with too few
+    pairs, or if the estimate is implausibly far from nominal."""
     rates = []
     for prev, cur in _same_connection_pairs(pmd_frames):
         dt = cur[1] - prev[1]
@@ -100,24 +78,15 @@ def _measured_sample_rate(pmd_frames, nominal_hz, min_pairs=10, max_deviation=0.
 def _planned_window_samples(pmd_frames, sampling_freq_hz, planned_duration_s):
     """Shared completeness math for compute_acc_completeness/compute_ecg_
     completeness. received/lost/total are measured against the run's whole
-    PLANNED duration (e.g. 300s), not just the span between the first and
-    last frame that actually arrived -- a run that streamed cleanly for the
-    43s it stayed connected out of a 300s plan is genuinely ~14% complete,
-    not 100%. This matches how Corsano's own completeness already works
-    (corsano_bioz_completeness_pct is measured against the device's file-
-    growth over the WHOLE capture, not just a downloaded span) -- before
-    this, the two devices were computed on inconsistent bases and weren't
-    comparable in the same table.
+    PLANNED duration, not just the span between the first and last frame
+    that arrived (a run connected for 43 s of a 300 s plan is ~14%
+    complete), as for Corsano.
 
-    Falls back to the old span-based method (gaps between consecutive
-    received frames only) when planned_duration_s isn't available at all
-    (e.g. a manifest.csv recorded before this field existed) -- degraded,
-    but still better than no number.
+    Falls back to the span-based method (gaps between consecutive received
+    frames only) when planned_duration_s isn't available.
 
     The expected sample count uses the rate the sensor actually delivers
-    (see _measured_sample_rate), not the nominal one: the H10's "200 Hz"
-    ACC really runs at ~203.9 Hz, which inflated every ACC percentage by
-    ~2 points and pushed 30 min runs above 100%."""
+    (see _measured_sample_rate), not the nominal one."""
     received = sum(f[2] for f in pmd_frames)
     rate_hz = _measured_sample_rate(pmd_frames, sampling_freq_hz)
     try:
@@ -135,12 +104,9 @@ def _planned_window_samples(pmd_frames, sampling_freq_hz, planned_duration_s):
 def _same_connection_pairs(pmd_frames):
     """Consecutive frame pairs that arrived on the same BLE connection.
 
-    The H10 restarts its PMD sample clock on a new connection: in
-    20261005_110316 row3 forced_channel_duty75pct rep2 it jumped back
-    ~9180 s across a supervision-timeout reconnect. Pairing frames across
-    that boundary turned the jump into 1.87M "skipped" ACC samples, and
-    even without a jump a cross-connection pair counts the time spent
-    disconnected as in-stream loss."""
+    The H10 can restart its PMD sample clock on a new connection, and a
+    cross-connection pair would count the time spent disconnected as
+    in-stream loss."""
     return [
         (prev, cur)
         for prev, cur in zip(pmd_frames, pmd_frames[1:])
@@ -220,26 +186,15 @@ POLAR_ECG_SAMPLING_FREQ_HZ = 130  # per PolarH10.py's ECG_SAMPLING_FREQ
 
 
 def _parse_polar_ecg_frame(hex_data):
-    """Parse one Polar PMD ECG notification frame -- mirrors
-    _parse_polar_acc_frame exactly, for the ECG variant of the same PMD
-    characteristic (see PolarH10.py's pmd_data_conv: data[0]==0x00 is ECG,
-    0x02 is ACC). Returns (first_sample_ts_s, last_sample_ts_s, n_samples)
-    on the sensor's own internal clock, or None if this isn't a complete/
-    valid ECG frame.
+    """Parse one Polar PMD ECG notification frame, like
+    _parse_polar_acc_frame (PolarH10.py's pmd_data_conv: data[0]==0x00 is
+    ECG, 0x02 is ACC). Returns (first_sample_ts_s, last_sample_ts_s,
+    n_samples) on the sensor's own internal clock, or None if this isn't a
+    complete/valid ECG frame.
 
-    Reference parse this mirrors is PolarH10.py's ecg_data_conv, which
-    computes this exact same sample_timestamp per sample -- then discards
-    it, publishing each ECG message with the HOST's wall-clock
-    (self.node.get_clock().now()) instead of the sensor's own embedded
-    time. That's fine for the driver's own purpose (real-time streaming),
-    but it means the published healthcare_msgs/msg/ECG topic (and any
-    rosbag recording of it) carries no way to detect real dropped PMD
-    packets -- only whether messages arrived, not whether the sensor's own
-    sample clock has gaps. Decoding the raw notification directly here
-    (added 2026-09-25, replacing an earlier rosbag-based completeness
-    metric with this HCI-native one, same as ACC already had) recovers
-    exactly the sensor-clock information the driver itself computes
-    internally but never exposes."""
+    Mirrors PolarH10.py's ecg_data_conv. The driver publishes ECG with the
+    host's clock, so only the raw notification carries the sensor
+    timestamps that reveal dropped frames."""
     try:
         data = bytes.fromhex(hex_data)
     except ValueError:
@@ -273,12 +228,8 @@ def compute_ecg_completeness(
     pmd_hex_frames, planned_duration_s=None, connection_ids=None
 ):
     """Sample completeness for the PMD ECG stream, from the sensor's OWN
-    embedded per-frame timestamps -- see _planned_window_samples (shared
-    with compute_acc_completeness) for how received/lost/total are actually
-    measured. Returns EMPTY_ECG_COMPLETENESS if no valid ECG frames were
-    found (e.g. this device isn't a Polar H10, or --publish-ecg-equivalent
-    wasn't enabled so the driver never subscribed to the PMD characteristic
-    at all -- either way, gracefully empty, never a parse failure)."""
+    embedded per-frame timestamps; see _planned_window_samples. Returns
+    EMPTY_ECG_COMPLETENESS if no valid ECG frames were found."""
     frames = _parsed_frames(pmd_hex_frames, _parse_polar_ecg_frame, connection_ids)
     if not frames:
         return dict(EMPTY_ECG_COMPLETENESS)
@@ -299,13 +250,9 @@ def compute_ecg_completeness(
 def _first_ecg_frame_host_ts(scoped_pmd_with_ts):
     """Host-clock (btmon capture-relative) timestamp of the first real ECG
     frame (data[0]==0x00) among (hex_data, host_ts_s) pairs -- same clock
-    domain as connection-complete events' own timestamps, so this can be
-    directly subtracted from "when did this run connect" to measure the
-    real, per-run PMD-ECG startup delay (driver/PMD-negotiation overhead
-    before streaming visibly begins), instead of assuming a fixed offset.
-    Confirmed as real and non-trivial on an actual clean capture: ECG
-    frames didn't start arriving until ~34s after the BLE link connected.
-    Returns None if no ECG frame was found."""
+    domain as connection-complete events, so the per-run PMD-ECG startup
+    delay is this minus the connection time. Returns None if no ECG frame
+    was found."""
     ecg_ts = [
         ts for hex_data, ts in scoped_pmd_with_ts
         if _parse_polar_ecg_frame(hex_data) is not None and ts is not None
@@ -347,11 +294,9 @@ def compute_hr_completeness(hr_hex_frames, connected_duration_s):
     """Approximate sample completeness for the standard HR/RR stream: sum
     of all received RR-intervals (real elapsed heartbeat time, since
     Polar's firmware buffers and backfills them into later notifications)
-    vs. this run's actual connected duration. This is NOT as reliable as
-    compute_acc_completeness -- the RR buffer isn't unlimited, so sustained
-    delay can still silently drop old RR-intervals before they're ever
-    sent, and any genuine skin-contact loss looks identical to transmission
-    loss here. Treat this as a cross-check, not the primary claim."""
+    vs. this run's connected duration. Less reliable than
+    compute_acc_completeness (the RR buffer is finite, and skin-contact
+    loss looks like transmission loss): a cross-check only."""
     total_rr_s = sum(
         rr for hex_data in hr_hex_frames for rr in _parse_polar_hr_frame(hex_data)
     )

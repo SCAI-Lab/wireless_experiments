@@ -531,9 +531,7 @@ def pre_run_rssi_check(session_dir, gcfg, device, condition, block):
     reference (gym_session.rssi_reference_dbm, else the first reading of
     the session, taken automatically). Never asks: out of tolerance or not
     advertising is logged as a warning and in pre_run_checks.csv, and the
-    run starts anyway -- no prompts during a recording. 2026-10-12: Corsano
-    free rep1 swung -64 to -96 dBm and lost the link twice on a free channel --
-    geometry or someone in between, not interference."""
+    run starts anyway (no prompts during a recording)."""
     name, mac = device["name"], device.get("mac_address")
     if not mac:
         return
@@ -679,10 +677,9 @@ def _r(v, nd=2):
 
 
 def _airtime_stalled(row, bg):
-    """A window the receiver delivered nothing in. Current monitors leave
-    its airtime blank; older files wrote 0.0 with 0 frames, which on a
-    channel whose windows normally hold hundreds of frames can only be a
-    stall (beacons alone are ~10/s per network)."""
+    """A window the receiver delivered nothing in: blank airtime, or 0.0
+    with 0 frames, which on a channel whose windows normally hold hundreds
+    of frames can only be a stall (beacons alone are ~10/s per network)."""
     if _f(row.get("airtime_pct")) is None:
         return True
     if row.get("frames") == "0":
@@ -699,8 +696,7 @@ def run_background_covariates(session_dir, manifest_row, bg):
     cov = {}
 
     # Only windows with a real reading count, for the values and for the
-    # coverage: stalled windows have a blank airtime_pct (or, before
-    # 2026-10-12's fix, 0.0 with 0 frames -- see _airtime_stalled).
+    # coverage: see _airtime_stalled.
     air = [r for r in _in_window(bg["airtime"], t0, t1) if not _airtime_stalled(r, bg)]
     vals = [v for v in (_f(r["airtime_pct"]) for r in air) if v is not None]
     covered = sum(_f(r["t_end"]) - _f(r["t_start"]) for r in air if _f(r["airtime_pct"]) is not None)

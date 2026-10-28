@@ -61,10 +61,8 @@ from .btmon_parse import parse_capture_file
 def _bluetoothd_instance():
     """(MainPID, start timestamp) of the running bluetooth.service, or None
     if it can't be read. A different value after a run means bluetoothd
-    died and was restarted in between -- confirmed 2026-09-30 21:25:51, when
-    it segfaulted mid-run (row3 forced_channel_duty25pct rep2) and systemd
-    restarted it while the run carried on and was recorded as PASSED.
-    The start timestamp guards against PID reuse."""
+    died and was restarted in between. The start timestamp guards against
+    PID reuse."""
     try:
         out = subprocess.run(
             ["systemctl", "show", "bluetooth", "-p", "MainPID",
@@ -102,11 +100,10 @@ def _attempt_run(
     survives, not just whether the process stayed alive. Never raises for a
     failed attempt; do_run decides what to do about that.
 
-    retry_launch=False (Row 2/3) launches the driver exactly once instead of
-    retrying a flaky initial connection -- a failed connection attempt under
-    interference is itself the KPI, not noise to retry away. See
-    connection_established in the manifest row: distinguishes "never
-    connected" from "connected, then dropped later"."""
+    retry_launch=False launches the driver exactly once: a failed connection
+    attempt under interference is itself a result. connection_established
+    in the manifest row distinguishes "never connected" from "connected,
+    then dropped later"."""
     rep_label = (
         f"{replicate}/{total_replicates}" if total_replicates else str(replicate)
     )
@@ -149,24 +146,11 @@ def _attempt_run(
     try:
         if not (extra and extra.get("forced_channels")):
             # This run must be AFH-free. The controller's channel
-            # classification is persistent hardware state -- NOT tied to
-            # any one process -- so a run that itself never calls
-            # set_host_channel_classification has no way to know whether a
-            # PREVIOUS run (or an interrupted/crashed session) already left
-            # one active. Confirmed as a real incident (2026-09-24): a Row 3
-            # run was interrupted when a session was stopped and resumed,
-            # and its forced classification leaked into two subsequent
-            # "AFH-free" Row 2 runs, both showing exactly FORCED_CHANNEL_
-            # RANGE's bitmap for their entire duration. Resetting is cheap
-            # and idempotent (a no-op if already unrestricted), so this
-            # runs unconditionally rather than trying to first detect
-            # whether a reset is actually needed -- there's no HCI command
-            # to read back "what classification is currently set" without
-            # an active connection to query its negotiated map against, so
-            # a blind, confirmed reset is the only real verification
-            # available before a connection even exists. See do_parse's
-            # check_channel_map_contamination for the detection-side
-            # backstop, in case this guard is ever bypassed.
+            # classification is persistent hardware state, so an earlier
+            # (or interrupted) run may have left one active, and there is
+            # no HCI command to read it back: reset it unconditionally
+            # (idempotent). do_parse's check_channel_map_contamination
+            # detects a leaked map afterwards.
             if not reset_host_channel_classification():
                 raise ChannelClassificationError(
                     "could not confirm the channel classification was reset "
@@ -190,8 +174,8 @@ def _attempt_run(
                 f"(no AFH escape route)"
             )
             # Set before sending: a "failed" send may still have reached the
-            # controller (2026-10-05 row5 k0 rep2: hcitool missed a Success
-            # reply), so the abort path must reset it either way.
+            # controller (hcitool can miss the Success reply), so the abort
+            # path must reset it either way.
             forced_channels_applied = True
             if not set_host_channel_classification(forced):
                 raise ChannelClassificationError(
@@ -221,8 +205,7 @@ def _attempt_run(
             )
         # QBSS during the run: the traffic phase for loaded runs, the whole
         # run (all ambient) for no-load runs. Stopped as soon as the watched
-        # duration ends (below) -- an earlier version sampled once, after
-        # teardown, which measured an idle channel.
+        # duration ends (below).
         qbss_poller = start_qbss_poller(qbss_iface, qbss_bssid)
 
         remaining = duration_s - settle
@@ -274,9 +257,8 @@ def _attempt_run(
     udp_stats = None
     # Set when this run doesn't represent its condition, whatever the link
     # did, and is recorded as FAILED: its WiFi load can't be shown to have
-    # been applied (was only a warning until 2026-09-30, when row4
-    # duty100pct_long passed although its load stopped ~13 min into a 30 min
-    # run), or bluetoothd crashed/restarted mid-run (checked after teardown).
+    # been applied, or bluetoothd crashed/restarted mid-run (checked after
+    # teardown).
     invalid_error = None
     if iperf_proc:
         try:
@@ -341,8 +323,7 @@ def _attempt_run(
 
     # Ambient reading after our traffic stops, once the AP's QBSS averaging
     # window no longer covers it (802.11's default is 50 beacon intervals,
-    # ~5 s; this AP's own window is undocumented). Teardown above usually
-    # already used up most of the wait.
+    # ~5 s). Teardown above usually already used up most of the wait.
     qbss_after = None
     if traffic_end is not None:
         wait_s = iperf_cfg.get("qbss_after_traffic_delay_s", 6) - (
@@ -413,10 +394,8 @@ def _attempt_run(
         f"rep{replicate} -- verifying BLE link ==="
     )
 
-    # The driver surviving doesn't mean the BLE link stayed up -- check that
-    # immediately (same criteria do_parse uses at session end) so a real
-    # failure surfaces now, while the operator is still at the chamber,
-    # instead of only showing up when results.csv is parsed much later.
+    # The driver surviving doesn't mean the BLE link stayed up: check now,
+    # with the criteria do_parse uses at session end.
     if not capture_file.exists():
         return "FAILED", "capture file missing after run"
     parsed = parse_capture_file(
@@ -430,8 +409,7 @@ def _attempt_run(
         f"establishment_failed={parsed['n_reason_establishment_failed']}"
     )
     # "unexpected" lumps real link losses together with failed reconnect
-    # attempts (0x3E) -- 2026-09-30 row3 max_load: 37 "unexpected", of which
-    # only 6 were the link actually dropping. Report them separately.
+    # attempts (0x3E): report them separately.
     log.info(
         f"     link losses (supervision timeout): "
         f"{parsed['n_reason_supervision_timeout']}, failed (re)connect "
@@ -567,16 +545,13 @@ def do_run(
     retry_on_fail=True,
 ):
     """Run one test, retrying automatically-unresolvable failures by asking
-    the operator to retry or stop -- on a real terminal. Non-interactively
-    (no one to ask), a failure aborts the session immediately, same as
-    before this per-test check existed.
+    the operator to retry or stop on a real terminal. Non-interactively, a
+    failure aborts the session.
 
-    retry_on_fail=False (Row 2/3, where interference-induced instability IS
-    the thing being measured) launches exactly once, never prompts, and
-    never raises RunAbortedError on failure -- the failed attempt is logged
-    and recorded as-is, and the session continues to the next replicate/
-    condition. Retrying-until-PASS on these rows would silently discard the
-    exact data point interference testing exists to capture."""
+    retry_on_fail=False (rows where interference-induced instability is
+    what is measured) launches exactly once, never prompts, and never
+    raises RunAbortedError on failure: the failed attempt is recorded
+    as-is and the session continues."""
     label = f"{row_label} | {device_name} | {condition} | rep{replicate}"
     safe_condition = condition.replace("%", "pct")
 

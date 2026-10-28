@@ -1,28 +1,19 @@
 """
-Shared infrastructure for chamber_session.py (Rows 1-5, the chamber day) and
-gym_session.py (Row 6, the separate real-gym visit): logging, config
-loading, btmon/driver process control, the pre-flight device sanity check,
-run execution, and capture parsing.
-
-Split into submodules by concern; this package re-exports the names the
-session scripts import, so `from session_lib import ...` keeps working.
-Import anything else directly from its submodule:
-
-    errors          exception types
-    logs            setup_logging and the shared `log` logger
-    session_files   config, session dirs, manifest.csv, resume/rerun
-    capture         btmon, rosbag and nRF sniffer processes
-    wifi            QBSS polling, internal-WiFi rfkill, channel occupancy
-    ble_radio       BLE density, AFH/RSSI polling, forced channel map
-    drivers         driver processes, BlueZ healing, pairing agent
-    preflight       pre-flight device/infrastructure/throughput checks
-    run             do_run (one recorded run)
-    run_checks      pass thresholds, data checks, evaluate_run_result
-    btmon_patterns  btmon output regexes
-    btmon_parse     parse_btmon_text / parse_capture_file
-    polar           Polar H10 ACC/ECG/HR completeness
-    corsano         Corsano 287-2B completeness
-    session_parse   do_parse (manifest.csv -> results.csv)
+errors          exception types
+logs            setup_logging and the shared `log` logger
+session_files   config, session dirs, manifest.csv, resume/rerun
+capture         btmon, rosbag and nRF sniffer processes
+wifi            QBSS polling, internal-WiFi rfkill, channel occupancy
+ble_radio       BLE density, AFH/RSSI polling, forced channel map
+drivers         driver processes, BlueZ healing, pairing agent
+preflight       pre-flight device/infrastructure/throughput checks
+run             do_run (one recorded run)
+run_checks      pass thresholds, data checks, evaluate_run_result
+btmon_patterns  btmon output regexes
+btmon_parse     parse_btmon_text / parse_capture_file
+polar           Polar H10 ACC/ECG/HR completeness
+corsano         Corsano 287-2B completeness
+session_parse   do_parse (manifest.csv -> results.csv)
 """
 
 from .errors import (  # noqa: F401

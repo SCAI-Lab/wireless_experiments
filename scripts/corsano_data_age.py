@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """corsano_data_age.py -- Corsano bio-impedance (BioZ) data age from HCI captures.
 
-Companion to analyze_session.py (imports its btsnoop reader); written 2026-10-14
-for Table I of the MEDWEAR paper.
+Companion to analyze_session.py (imports its btsnoop reader).
 
 Data age(t) = t - (last time BioZ bytes not contained in the previous BioZ transfer
 reached the host), sampled every 0.1 s over the planned window

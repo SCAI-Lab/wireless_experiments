@@ -8,9 +8,9 @@ controller under test (hci0) and never transmits:
 
   - WiFi airtime: the USB T3U Plus (rtw_8822bu) in passive MONITOR mode,
     parked on the forced WiFi channel. Every received frame's on-air time
-    (tshark's wlan_radio.duration, preamble included -- checked 2026-10-12
-    against hand-built radiotap frames: 1500 B at 54 Mb/s -> 244 us = 20
-    preamble + 224 data) is summed per window: airtime_pct = sum/window.
+    (tshark's wlan_radio.duration, preamble included: 1500 B at 54 Mb/s ->
+    244 us = 20 preamble + 224 data) is summed per window:
+    airtime_pct = sum/window.
     A lower bound: frames the adapter can't decode (too weak, collided,
     non-WiFi energy) and inter-frame gaps/backoff aren't counted. The same
     tool and metric run in the chamber put both sites on one axis.
@@ -21,9 +21,8 @@ controller under test (hci0) and never transmits:
   - Bluetooth crowding: the nRF52840 sniffer, NOT following any device,
     streamed through a FIFO into tshark. Distinct CRC-ok advertiser
     addresses are counted per ble_window_s IN MEMORY and only the counts
-    are written -- no pcap, no address ever reaches disk. (A 2026-10-12
-    desk test: 45 real advertisers in 30 s vs 840 "addresses" from
-    CRC-failed packets, hence the CRC filter.)
+    are written -- no pcap, no address ever reaches disk. CRC-failed packets
+    are dropped, as their corrupted addresses would inflate the count.
   - People count: entered by hand with the `people` subcommand.
 
 The sensor tests (gym_session.py) never start or stop this; the two are
@@ -311,11 +310,8 @@ class WifiCapture:
 
 
 # Kernel messages meaning the rtw88 receive path is handing mac80211 corrupt
-# frames. 2026-10-13 (gym_20261013_133642): from 14:03:54 the T3U logged
-# "Rate marked as a VHT rate but data is invalid" WARNs and "unused phy
-# status page" nonstop for 110 min. Airtime read 92-100 % while beaconing
-# networks fell from ~100 to 2-13: garbage rates give garbage durations.
-# An interface bounce (the next session's monitor start) cleared it.
+# frames: garbage rates give garbage durations (airtime near 100 % while
+# the count of beaconing networks collapses). An interface bounce clears it.
 DRIVER_FAULT_RE = re.compile(
     r"rtw_8822bu .*unused phy status page"
     r"|Rate marked as a \S+ rate but data is invalid"
@@ -533,9 +529,8 @@ class BleCounter:
         })
 
     def _read(self):
-        # Windows run on ARRIVAL time, not the pcap timestamps: the
-        # sniffer's own clock jumped minutes ahead within 23 s in a
-        # 2026-10-12 test. Arrival lags the air by ~1 s, steady. The first
+        # Windows run on ARRIVAL time, not the pcap timestamps (the
+        # sniffer's own clock can jump). Arrival lags the air by ~1 s. The first
         # seconds are a burst of whatever the dongle buffered before the
         # FIFO opened (~5x the steady rate), so they're skipped.
         w0 = None
@@ -819,11 +814,7 @@ def cmd_run(cfg, args):
             s = cap.buf.summarize(t0, t1, channel)
             # A window with no frames at all on a channel that has had
             # beacons is the receiver stalling, not an idle channel: beacons
-            # come every ~100 ms. Seen 2026-10-12 (gym_20261012_165947):
-            # after sweep 5 ended on 5 GHz ch 140 and retuned to ch 11, the
-            # adapter delivered nothing for 15 min, until the next sweep
-            # retuned it -- and those windows were written as 0.0 %.
-            # A stalled window's airtime is left blank, so it can't pass
+            # come every ~100 ms. A stalled window's airtime is left blank, so it can't pass
             # for a measurement; then retune, then bounce the interface.
             heard_beacons = heard_beacons or s["beaconing_networks"] > 0
             s["fault"] = ""

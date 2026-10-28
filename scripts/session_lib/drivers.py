@@ -21,17 +21,10 @@ from .logs import log
 
 def start_driver(launch_cmd, log_path=None):
     """Launch a device driver. With log_path, keep the driver's own
-    stdout/stderr instead of discarding it.
-
-    Worth the extra file: the HCI capture shows what reached the air, but only
-    the driver's own log shows what it *tried* to do, and the two failure modes
-    we care about look identical on HCI -- "gave up and stopped trying" and
-    "kept failing fast before emitting anything" both appear as silence.
-    Confirmed the hard way on 2026-09-28: row3 max_load rep1 went quiet for its
-    last 174s with the process still alive, and rep2/rep3 never issued a single
-    connect, with no way to tell why because this function sent every line to
-    DEVNULL. PYTHONUNBUFFERED so a driver that has to be SIGKILLed (which both
-    of those runs did) still leaves its final lines on disk."""
+    stdout/stderr instead of discarding it: the HCI capture shows what
+    reached the air, the driver log what the driver tried to do.
+    PYTHONUNBUFFERED so a driver that has to be SIGKILLed still leaves its
+    final lines on disk."""
     log.info(f"  -> launching driver: {launch_cmd}")
     out, env, handle = subprocess.DEVNULL, None, None
     if log_path:
@@ -65,9 +58,7 @@ def start_driver(launch_cmd, log_path=None):
 
 # Drivers started by start_driver and not yet stopped. They run in their own
 # session (os.setsid, so stop_driver can signal the whole process group),
-# which also means Ctrl+C in the terminal never reaches them: on 2026-09-30 an
-# interrupted session exited cleanly but left its Corsano driver running,
-# still holding the watch's connection on the shared radio.
+# so Ctrl+C in the terminal never reaches them.
 _live_drivers = set()
 
 
@@ -99,14 +90,9 @@ def stop_driver(proc):
 
 def disconnect_ble_device(mac_address, timeout_s=5):
     """Explicitly tell BlueZ to disconnect this device once we're done with
-    it. Killing our driver process only stops OUR process -- BlueZ still
-    treats a bonded, trusted device as eligible for background auto-
-    reconnect, and will silently reconnect to it the moment it's back in
-    range/advertising. Confirmed via real captures: a "finished" device
-    reconnected in the background and stayed connected through an entire
-    subsequent test on a different device, causing that other device to
-    drop roughly every 45s from BLE-BLE contention on the single shared
-    radio -- not RF interference, not a device firmware issue."""
+    it. Stopping the driver is not enough: BlueZ auto-reconnects a bonded,
+    trusted device in the background, and that connection would share the
+    radio with the next test's device."""
     if not mac_address:
         return
     try:
@@ -135,10 +121,8 @@ def disconnect_ble_device(mac_address, timeout_s=5):
 
 
 def check_ros_packages(cfg):
-    """Preflight: every `ros2 run <pkg> ...` driver must resolve. After a
-    reboot a shell that only sourced /opt/ros/<distro> can't find the driver
-    workspace; on 2026-09-28 that made every launch exit with code 1 and was
-    reported as "device not ready" / "no data within 90 s"."""
+    """Preflight: every `ros2 run <pkg> ...` driver must resolve (a shell that
+    only sourced /opt/ros/<distro> can't find the driver workspace)."""
     missing = []
     for d in cfg["devices"]:
         parts = shlex.split(d.get("launch_cmd") or "")
@@ -179,16 +163,11 @@ def heal_stale_bluez_connection(mac_address):
     """Detect and clear bluetoothd's stale "Connected: yes" for a device the
     kernel no longer has a link to. Returns True if the state was stale.
 
-    Confirmed on 2026-09-28 (row3 max_load rep1, t=123.5s): a host disconnect
-    raced a supervision timeout, the kernel failed the MGMT Disconnect with
-    status 0x0e, bluetoothd logged "Failed to disconnect device: Disconnected
-    (0x0e)" and never received a Device Disconnected event. From then on
-    bluetoothd kept the H10 marked connected and never answered D-Bus
-    Disconnect, so bleak skipped Connect() and hung in its cancel path -- the
-    rest of rep1 (174s) and ALL of rep2/rep3 issued no connect at all, even
-    across driver restarts. Only an adapter power cycle (or restarting
-    bluetoothd) clears it: powering off makes bluetoothd drop every
-    connection object and reply to the pending Disconnect calls."""
+    When a host disconnect races a supervision timeout, the kernel can fail
+    the MGMT Disconnect (status 0x0e) and bluetoothd never gets a Device
+    Disconnected event: it keeps the device marked connected, and bleak
+    never issues Connect() again. Only an adapter power cycle (or
+    restarting bluetoothd) clears it."""
     if not mac_address:
         return False
     if not _bluez_says_connected(mac_address) or _kernel_has_link(mac_address) is not False:
@@ -218,12 +197,9 @@ def heal_stale_bluez_connection(mac_address):
 def start_pairing_agent():
     """Register a non-interactive BlueZ pairing agent (capability
     NoInputNoOutput) as the system default for the life of this process, so
-    pairing with a known chamber sensor doesn't wait on a human clicking
-    "Allow" in the desktop's own Bluetooth agent (e.g. GNOME's) -- a device
-    with no input/output capability is defined by the BLE spec to pair via
-    "Just Works" with no confirmation needed, so this is a legitimate
-    capability declaration, not a security bypass, for devices we already
-    trust in a controlled chamber session. Returns the Popen handle (or None
+    pairing with a known sensor doesn't wait on a confirmation in the
+    desktop's own Bluetooth agent ("Just Works" pairing). Returns the Popen
+    handle (or None
     if bluetoothctl isn't available) -- pass it to stop_pairing_agent() when
     the session ends so the desktop's own agent can take back over."""
     try:
@@ -284,12 +260,8 @@ def sleep_and_watch_driver(
     duration_s, driver_proc, launch_cmd, poll_interval=1.0, heartbeat_s=30.0
 ):
     """Sleep for duration_s, polling driver_proc so a crash/exit is caught
-    quickly instead of only surfacing once the full duration has elapsed.
-    On an interactive terminal, shows a live in-place progress bar instead of
-    spamming the console with a fresh line every heartbeat_s; the same
-    periodic detail is still written to the session log file (at DEBUG level,
-    so it doesn't also flood the console) so nothing is lost from the audit
-    trail on a long run like the gym visit's ~1hr captures."""
+    quickly. On an interactive terminal, shows a live progress bar; the
+    periodic heartbeat goes to the session log at DEBUG level."""
     elapsed = 0.0
     next_heartbeat = heartbeat_s
     show_bar = sys.stdout.isatty()
@@ -317,10 +289,9 @@ def sleep_and_watch_driver(
 def start_driver_with_retry(launch_cmd, grace_s=5.0, max_attempts=3, retry_delay_s=3.0,
                             log_path=None):
     """Launch the driver and confirm it survives an initial grace period
-    before trusting it. Many failures seen in practice are a flaky initial
-    BLE connection/pairing attempt (driver exits cleanly, returncode 0,
-    within the first second or two) rather than a real hardware problem, so
-    retry the launch a few times before giving up. Returns the live driver
+    before trusting it, retrying the launch a few times (a failed initial
+    connection makes the driver exit within a second or two). Returns the
+    live driver
     process, or raises DriverExitedError after the final failed attempt."""
     for attempt in range(1, max_attempts + 1):
         driver_proc = start_driver(launch_cmd, log_path=log_path)

@@ -2,8 +2,7 @@
 <session_dir>/environment.json at session start: OS/kernel, BlueZ and
 other packages, Bluetooth controller and WiFi firmware, Python packages,
 nRF sniffer tooling, git state of this repo and of each device driver, and
-(over SSH) the iperf3 load client. Added 2026-10-06 so every chamber
-session records exactly what produced its data.
+(over SSH) the iperf3 load client.
 
 Best-effort throughout: every probe has a short timeout and records an
 "error" string instead of raising, so a missing tool never blocks a run.
@@ -110,8 +109,8 @@ def _sniffer():
 
 
 def _load_client(iperf_cfg):
-    """The iperf3 load client (the Pi), over SSH: its WiFi link rate is what
-    sets the 100% load ceiling, so it's worth recording each session."""
+    """The iperf3 load client (the Pi), over SSH: its WiFi link rate sets
+    the 100% load ceiling."""
     if not iperf_cfg or not iperf_cfg.get("pi_host"):
         return {"error": "no row2_duty_cycle.iperf.pi_host configured"}
     target = f"{iperf_cfg.get('pi_user', 'pi')}@{iperf_cfg['pi_host']}"

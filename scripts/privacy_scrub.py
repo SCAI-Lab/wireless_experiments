@@ -56,10 +56,8 @@ MGMT_DEVICE_FOUND = 0x0012
 MGMT_COMMAND_COMPLETE = 0x0001
 
 # BlueZ management (MGMT) commands whose parameters -- and whose Command
-# Complete return parameters -- start with a device address (mgmt-api.txt).
-# 2026-10-13 (gym_20261013_093610): during BR/EDR discovery bluetoothd sent
-# Confirm Name (0x0025) for a bystander's phone; only Device Found was
-# covered before.
+# Complete return parameters -- start with a device address (mgmt-api.txt),
+# e.g. Confirm Name (0x0025), sent during BR/EDR discovery.
 MGMT_ADDR_COMMANDS = {
     0x0014,  # Disconnect
     0x0016, 0x0017,  # PIN Code Reply / Negative Reply
@@ -218,9 +216,8 @@ def filter_btsnoop(src, dst, allowed):
 def _btmon_misdecoded(allowed):
     """btmon 5.72 decodes MGMT New Connection Parameter (0x001c) one byte
     off (store hint before the address), so OUR device's address prints
-    shifted: A0:9E:1A:DF:7F:6C, type 1 -> 01:A0:9E:1A:DF:7F. Checked
-    against the raw bytes 2026-10-12. Only these exact variants of our own
-    addresses are accepted, nothing broader."""
+    shifted: A0:9E:1A:DF:7F:6C, type 1 -> 01:A0:9E:1A:DF:7F. Only these
+    exact variants of our own addresses are accepted, nothing broader."""
     out = set()
     for mac in allowed:
         le = bytes(int(x, 16) for x in reversed(mac.split(":")))

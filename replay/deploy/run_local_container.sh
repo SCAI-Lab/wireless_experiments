@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run the full end-to-end protocol on this laptop inside the deployment
 # replay container (the same image job_e2e.sbatch uses on the SLURM node),
-# against the local MedWear stack. Kept apart from the first local run:
-# own project (from .replay_credentials_ctr), logs_ctr/ and results_ctr/.
+# against the local MedWear stack, with its own project (from
+# .replay_credentials_ctr), logs_ctr/ and results_ctr/.
 #
 #   deploy/run_local_container.sh            # start (detached), resumable
 #   touch logs_ctr/STOP                      # stop cleanly between runs

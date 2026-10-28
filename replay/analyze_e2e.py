@@ -51,10 +51,9 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "scripts"))  # analyze_session.py
-# Session analysis: analyze_session (v1.4.3, the paper's) stamps a
-# notification's host arrival t_h at its LAST ACL fragment and gives the
-# censoring-aware host M(D) of table3_hostcens.tex. E2E_SESSION_ANALYSIS
-# selects another copy of it.
+# Session analysis: analyze_session stamps a notification's host arrival t_h
+# at its LAST ACL fragment and gives the censoring-aware host M(D) of
+# table3_hostcens.tex. E2E_SESSION_ANALYSIS selects another copy of it.
 import importlib  # noqa: E402
 A = importlib.import_module(os.environ.get("E2E_SESSION_ANALYSIS", "analyze_session"))
 
@@ -141,7 +140,7 @@ def load_polar_run(sdir: Path, mrow: dict, loginfo: dict, ctx: dict) -> dict:
     out["exclude_reason"] = r.get("exclude_reason", "")
     out["host_miss_pct_analyze_session"] = {D: r.get(f"miss_{int(D * 1000)}ms_pct") for D in DEADLINES_S}
     out["host_age_miss_pct_analyze_session"] = {D: r.get(f"miss_age_{int(D * 1000)}ms_pct") for D in DEADLINES_S}
-    # censoring-aware (analyze_session >= 1.4.1): samples acquired in [onset, end - D] only
+    # censoring-aware: samples acquired in [onset, end - D] only
     out["host_agecens_miss_pct_analyze_session"] = {D: r.get(f"miss_age_cens_{int(D * 1000)}ms_pct") for D in DEADLINES_S}
     if det is None:
         out["error"] = "no ECG frames"
@@ -691,7 +690,7 @@ def main() -> None:
                      f"{c['M_hostage_0.1s_median']:.1f} & {c['M_hostage_0.25s_median']:.1f} & "
                      f"{c['M_hostage_1s_median']:.1f} & {dur:.1f} \\\\")
     (args.out / "table3.tex").write_text("\n".join(lines) + "\n")
-    # same table with the host columns censoring-aware, as analyze_session >= 1.4.1
+    # same table with the host columns censoring-aware, as analyze_session
     # reports them (durable column unchanged: full window)
     lines = []
     for label, _ in TABLE_ROWS:

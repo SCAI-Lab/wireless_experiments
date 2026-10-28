@@ -6,9 +6,9 @@ Export sessions for publication (Zenodo): a cleaned copy, one zip per session
 The sessions in captures/ are never modified. Each one is copied to
 <out>/staging/<session>/ and the copy is cleaned:
 
-  - session.log: libraries' DEBUG lines are dropped. Before session_lib's
-    _OwnDebugOnly filter, bleak/dbus-fast logged every D-Bus signal there,
-    with each nearby device's address and name (bystanders in the gym).
+  - session.log: libraries' DEBUG lines are dropped (bleak/dbus-fast log
+    every D-Bus signal, with each nearby device's address and name; see
+    session_lib's _OwnDebugOnly filter).
     Any other address that isn't ours becomes <other device>. Checked:
     analyze_session.parse_log reads exactly the same from the copy.
   - Researcher identifiers in text files: /home/<user> -> ~, the laptop's

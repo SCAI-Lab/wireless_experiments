@@ -15,11 +15,8 @@ class DriverExitedError(Exception):
 
 
 class ChannelClassificationError(Exception):
-    """Raised when forcing the BLE channel map (Row 3's mechanism test)
-    fails -- treated as a full run failure, not a degrade-gracefully case
-    like QBSS/AFH-read, because silently NOT applying the forced channel
-    map would invalidate the whole point of the condition: the run would
-    look like a normal AFH-free test while being labeled as the
+    """Raised when forcing the BLE channel map fails. A full run failure:
+    without the map the run would be an AFH-free run labelled as the
     channel-restricted one."""
 
 
@@ -37,6 +34,5 @@ class InfrastructureCheckError(Exception):
 
 
 class RunAbortedError(Exception):
-    """Raised when a test fails and the session should stop -- either the
-    user chose to stop when asked, or there was no one to ask (a
-    non-interactive terminal) so the old automatic-abort behavior applies."""
+    """Raised when a test fails and the session should stop: the user chose
+    to stop when asked, or the terminal is non-interactive."""
