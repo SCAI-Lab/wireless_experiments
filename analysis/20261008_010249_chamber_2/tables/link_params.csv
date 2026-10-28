@@ -1,0 +1,2 @@
+device,final_ci_ms,initial_ci_ms,sup_timeout_ms,latency,dle_bytes,phy,noload_Bps,noload_notif_per_s,requests_per_s,driver
+Polar_H10,45.00,45.00--60.00,6000,0,236,2M,,,,ros2 run polar_ros2 polar_connector --mac-address-or-name A0:9E:1A:DF:7F:6C --no-publish-battery

@@ -1,0 +1,13 @@
+device,condition,replicate,capture_file,conn_idx,t_up_s,t_down_s,down_reason,connected_s,data_units,t_first_data_s,data_per_connected_s,after_first_loss
+Polar_H10,forced_channel_no_load,1,row3_Polar_H10_forced_channel_no_load_rep1.btsnoop,0,8.237,307.0,,298.763,38544,2.817,129.012,False
+Polar_H10,forced_channel_duty75pct,1,row3_Polar_H10_forced_channel_duty75pct_rep1.btsnoop,0,8.256,313.0,,304.744,34675,32.122,113.784,False
+Polar_H10,headroom_k0_duty75pct,1,row5_Polar_H10_headroom_k0_duty75pct_rep1.btsnoop,0,8.288,312.0,,303.712,35332,32.01,116.334,False
+Polar_H10,headroom_k8_duty100pct,2,row8_Polar_H10_headroom_k8_duty100pct_rep2.btsnoop,0,8.336,313.0,,304.664,35478,31.996,116.45,False
+Polar_H10,headroom_k2_duty100pct,3,row8_Polar_H10_headroom_k2_duty100pct_rep3.btsnoop,0,8.289,313.0,,304.711,35478,32.041,116.432,False
+Polar_H10,headroom_k2_duty100pct,2,row8_Polar_H10_headroom_k2_duty100pct_rep2.btsnoop,0,8.29,314.0,,305.71,35551,32.095,116.29,False
+Polar_H10,headroom_k2_duty100pct,1,row8_Polar_H10_headroom_k2_duty100pct_rep1.btsnoop,0,8.201,313.0,,304.799,35478,32.029,116.398,False
+Polar_H10,headroom_k8_duty100pct,3,row8_Polar_H10_headroom_k8_duty100pct_rep3.btsnoop,0,8.263,314.0,,305.737,35551,31.986,116.28,False
+Polar_H10,headroom_k8_duty100pct,1,row8_Polar_H10_headroom_k8_duty100pct_rep1.btsnoop,0,8.2,313.0,,304.8,35551,31.898,116.637,False
+Polar_H10,headroom_k0_duty75pct,2,row5_Polar_H10_headroom_k0_duty75pct_rep2.btsnoop,0,8.234,314.0,,305.766,34602,32.019,113.165,False
+Polar_H10,forced_channel_duty75pct,2,row3_Polar_H10_forced_channel_duty75pct_rep2.btsnoop,0,8.194,314.0,,305.806,35551,31.954,116.253,False
+Polar_H10,forced_channel_no_load,2,row3_Polar_H10_forced_channel_no_load_rep2.btsnoop,0,8.188,307.0,,298.812,34748,32.029,116.287,False

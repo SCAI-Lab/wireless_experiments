@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.mypy_cache/
+
+# credentials written by setup_replay_user.sh / init_server.sh
+.replay_credentials*
+.replay_admin_credentials
+
+# replay logs (published on Zenodo, see README) and earlier results
+logs/
+logs_*/
+results_*/

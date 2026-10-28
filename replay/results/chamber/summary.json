@@ -1,0 +1,651 @@
+{
+  "full_replay": {
+    "n_recordings": 120,
+    "hours": 11.854026391933335,
+    "batches": {
+      "batches": 88280,
+      "attempts": 88280,
+      "http_200": 88279,
+      "samples_committed": 15085376,
+      "status_ingested": 88279,
+      "overlap_warnings": 88279,
+      "http_400": 1,
+      "samples_rejected": 146
+    },
+    "errors": {
+      "SCHEMA_VALIDATION_FAILURE": 1
+    },
+    "plausibility_rejections": [
+      {
+        "session": "chamber_2",
+        "run": "row3_Polar_H10_forced_channel_no_load_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1791414331650199362,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=4.17 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-24T12:23:17Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 2.819526195526123
+      }
+    ],
+    "expected_msgs": {
+      "/polar_ecg": 2627270,
+      "/polar_hr": 0,
+      "/polar_acc": 4117140,
+      "/corsano/acceleration": 3720,
+      "/corsano/hr": 472,
+      "/corsano/bioz": 3808
+    },
+    "committed_msgs": {
+      "/polar_acc": 4117140,
+      "/polar_ecg": 2627124,
+      "/corsano/hr": 472,
+      "/corsano/bioz": 3808,
+      "/corsano/acceleration": 3720
+    },
+    "missing_msgs": {
+      "/polar_ecg": 146,
+      "/polar_hr": 0,
+      "/polar_acc": 0,
+      "/corsano/acceleration": 0,
+      "/corsano/hr": 0,
+      "/corsano/bioz": 0
+    }
+  },
+  "stages": [
+    {
+      "tag": "full_W1_sessions",
+      "step": "ble",
+      "label": "BLE link + host stack (added delay, t_h - t_s)",
+      "n": 2627124,
+      "mean_ms": 330.44536010787346,
+      "p50_ms": 55.87303638458252,
+      "p95_ms": 1053.4011125564575,
+      "p99_ms": 7590.189576148987
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "driver",
+      "label": "Driver to standardized ROS 2 message (t_r - t_h)",
+      "n": 2627124,
+      "mean_ms": 3.4057412074433384,
+      "p50_ms": 3.010272979736328,
+      "p95_ms": 5.336999893188477,
+      "p99_ms": 10.689735412597656
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "batching",
+      "label": "Bridge batch window (sample receipt -> batch closed)",
+      "n": 2627124,
+      "mean_ms": 719.5556290792606,
+      "p50_ms": 639.4768953323364,
+      "p95_ms": 1040.649139881134,
+      "p99_ms": 1045.927231311798
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "queue",
+      "label": "Upload queue (batch closed -> request sent)",
+      "n": 2627124,
+      "mean_ms": 0.4836758721612624,
+      "p50_ms": 0.22554397583007812,
+      "p95_ms": 0.3955364227294922,
+      "p99_ms": 7.637977600097656
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "transport",
+      "label": "HTTPS to the API: TLS, nginx, auth (sent -> received)",
+      "n": 2627124,
+      "mean_ms": 3.7967665862196083,
+      "p50_ms": 3.439664840698242,
+      "p95_ms": 8.443117141723633,
+      "p99_ms": 10.85805892944336
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "validation",
+      "label": "Schema and plausibility validation",
+      "n": 2627124,
+      "mean_ms": 0.5857193540842773,
+      "p50_ms": 0.5190372467041016,
+      "p95_ms": 1.210927963256836,
+      "p99_ms": 2.229928970336914
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "postgres",
+      "label": "PostgreSQL commit (batch metadata)",
+      "n": 2627124,
+      "mean_ms": 11.315107672316884,
+      "p50_ms": 9.752077102661133,
+      "p95_ms": 23.676095962524414,
+      "p99_ms": 52.17301368713379
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "influx",
+      "label": "InfluxDB write (samples)",
+      "n": 2627124,
+      "mean_ms": 6.144629259981638,
+      "p50_ms": 6.0,
+      "p95_ms": 9.0,
+      "p99_ms": 17.0
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "total",
+      "label": "Total, sensor to durable commit",
+      "n": 2627124,
+      "mean_ms": 1075.732629139341,
+      "p50_ms": 1048.567533493042,
+      "p95_ms": 1853.9074778556874,
+      "p99_ms": 8261.622213125229
+    },
+    {
+      "tag": "full_W1_sessions",
+      "step": "reply",
+      "label": "Acknowledgment back to the bridge (not in total)",
+      "n": 2627124,
+      "mean_ms": 12.463546708361402,
+      "p50_ms": 11.976242065429688,
+      "p95_ms": 17.3797607421875,
+      "p99_ms": 19.948244094848633
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "ble",
+      "label": "BLE link + host stack (added delay, t_h - t_s)",
+      "n": 777669,
+      "mean_ms": 963.4325978879714,
+      "p50_ms": 106.57966136932373,
+      "p95_ms": 6812.167525291443,
+      "p99_ms": 8744.560360908508
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "driver",
+      "label": "Driver to standardized ROS 2 message (t_r - t_h)",
+      "n": 777669,
+      "mean_ms": 3.1474546694651346,
+      "p50_ms": 2.977609634399414,
+      "p95_ms": 5.24592399597168,
+      "p99_ms": 6.676034927368152
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "batching",
+      "label": "Bridge batch window (sample receipt -> batch closed)",
+      "n": 777669,
+      "mean_ms": 121.82958627919835,
+      "p50_ms": 122.03454971313477,
+      "p95_ms": 144.69313621520996,
+      "p99_ms": 147.62027740478516
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "queue",
+      "label": "Upload queue (batch closed -> request sent)",
+      "n": 777669,
+      "mean_ms": 0.3202167058467792,
+      "p50_ms": 0.1480579376220703,
+      "p95_ms": 0.1666545867919922,
+      "p99_ms": 0.19431114196777344
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "transport",
+      "label": "HTTPS to the API: TLS, nginx, auth (sent -> received)",
+      "n": 777669,
+      "mean_ms": 3.3541616454724084,
+      "p50_ms": 3.3075809478759766,
+      "p95_ms": 3.583192825317383,
+      "p99_ms": 3.9353370666503906
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "validation",
+      "label": "Schema and plausibility validation",
+      "n": 777669,
+      "mean_ms": 0.5138789475601141,
+      "p50_ms": 0.5109310150146484,
+      "p95_ms": 0.5409717559814453,
+      "p99_ms": 0.5600452423095703
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "postgres",
+      "label": "PostgreSQL commit (batch metadata)",
+      "n": 777669,
+      "mean_ms": 9.583551268837558,
+      "p50_ms": 9.45484161376953,
+      "p95_ms": 10.316082000732422,
+      "p99_ms": 11.383005142211914
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "influx",
+      "label": "InfluxDB write (samples)",
+      "n": 777669,
+      "mean_ms": 4.78518752837004,
+      "p50_ms": 5.0,
+      "p95_ms": 6.0,
+      "p99_ms": 6.0
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "total",
+      "label": "Total, sensor to durable commit",
+      "n": 777669,
+      "mean_ms": 1106.966634932722,
+      "p50_ms": 251.816987991333,
+      "p95_ms": 6961.064553260803,
+      "p99_ms": 8901.485695838925
+    },
+    {
+      "tag": "sweep_W0.1_sessions",
+      "step": "reply",
+      "label": "Acknowledgment back to the bridge (not in total)",
+      "n": 777669,
+      "mean_ms": 12.166918374796069,
+      "p50_ms": 12.20250129699707,
+      "p95_ms": 13.173341751098633,
+      "p99_ms": 13.634204864501953
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "ble",
+      "label": "BLE link + host stack (added delay, t_h - t_s)",
+      "n": 777669,
+      "mean_ms": 963.4325978879714,
+      "p50_ms": 106.57966136932373,
+      "p95_ms": 6812.167525291443,
+      "p99_ms": 8744.560360908508
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "driver",
+      "label": "Driver to standardized ROS 2 message (t_r - t_h)",
+      "n": 777669,
+      "mean_ms": 3.1474546694651346,
+      "p50_ms": 2.977609634399414,
+      "p95_ms": 5.24592399597168,
+      "p99_ms": 6.676034927368152
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "batching",
+      "label": "Bridge batch window (sample receipt -> batch closed)",
+      "n": 777669,
+      "mean_ms": 424.4280539552295,
+      "p50_ms": 511.9168758392334,
+      "p95_ms": 542.7912712097168,
+      "p99_ms": 547.0015144348143
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "queue",
+      "label": "Upload queue (batch closed -> request sent)",
+      "n": 777669,
+      "mean_ms": 0.5651001068320982,
+      "p50_ms": 0.16498565673828125,
+      "p95_ms": 2.009868621826172,
+      "p99_ms": 5.56492805480957
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "transport",
+      "label": "HTTPS to the API: TLS, nginx, auth (sent -> received)",
+      "n": 777669,
+      "mean_ms": 3.561803413162595,
+      "p50_ms": 3.4117698669433594,
+      "p95_ms": 3.8480758666992188,
+      "p99_ms": 8.473396301269531
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "validation",
+      "label": "Schema and plausibility validation",
+      "n": 777669,
+      "mean_ms": 0.5355565302669077,
+      "p50_ms": 0.5259513854980469,
+      "p95_ms": 0.5660057067871094,
+      "p99_ms": 0.5960464477539062
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "postgres",
+      "label": "PostgreSQL commit (batch metadata)",
+      "n": 777669,
+      "mean_ms": 9.904382860926402,
+      "p50_ms": 9.75095748901367,
+      "p95_ms": 10.789104461669922,
+      "p99_ms": 12.02594757080078
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "influx",
+      "label": "InfluxDB write (samples)",
+      "n": 777669,
+      "mean_ms": 5.239536358013499,
+      "p50_ms": 5.0,
+      "p95_ms": 6.0,
+      "p99_ms": 7.0
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "total",
+      "label": "Total, sensor to durable commit",
+      "n": 777669,
+      "mean_ms": 1410.8144857818677,
+      "p50_ms": 629.0862560272217,
+      "p95_ms": 7263.650083541868,
+      "p99_ms": 9172.406001091002
+    },
+    {
+      "tag": "sweep_W0.5_sessions",
+      "step": "reply",
+      "label": "Acknowledgment back to the bridge (not in total)",
+      "n": 777669,
+      "mean_ms": 12.277492781462142,
+      "p50_ms": 12.245416641235352,
+      "p95_ms": 13.338327407836914,
+      "p99_ms": 15.37632942199707
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "ble",
+      "label": "BLE link + host stack (added delay, t_h - t_s)",
+      "n": 777669,
+      "mean_ms": 963.4325978879714,
+      "p50_ms": 106.57966136932373,
+      "p95_ms": 6812.167525291443,
+      "p99_ms": 8744.560360908508
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "driver",
+      "label": "Driver to standardized ROS 2 message (t_r - t_h)",
+      "n": 777669,
+      "mean_ms": 3.1474546694651346,
+      "p50_ms": 2.977609634399414,
+      "p95_ms": 5.24592399597168,
+      "p99_ms": 6.676034927368152
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "batching",
+      "label": "Bridge batch window (sample receipt -> batch closed)",
+      "n": 777669,
+      "mean_ms": 698.1594035315348,
+      "p50_ms": 665.1477813720703,
+      "p95_ms": 1041.4929389953613,
+      "p99_ms": 1046.3588237762451
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "queue",
+      "label": "Upload queue (batch closed -> request sent)",
+      "n": 777669,
+      "mean_ms": 0.5751804323017454,
+      "p50_ms": 0.1780986785888672,
+      "p95_ms": 0.27680397033691406,
+      "p99_ms": 5.493640899658203
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "transport",
+      "label": "HTTPS to the API: TLS, nginx, auth (sent -> received)",
+      "n": 777669,
+      "mean_ms": 3.766812758531098,
+      "p50_ms": 3.5593509674072266,
+      "p95_ms": 4.045248031616211,
+      "p99_ms": 16.224384307861328
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "validation",
+      "label": "Schema and plausibility validation",
+      "n": 777669,
+      "mean_ms": 0.5699860166836636,
+      "p50_ms": 0.5471706390380859,
+      "p95_ms": 0.5898475646972656,
+      "p99_ms": 0.6721019744873047
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "postgres",
+      "label": "PostgreSQL commit (batch metadata)",
+      "n": 777669,
+      "mean_ms": 10.33259626724104,
+      "p50_ms": 10.183137893676758,
+      "p95_ms": 11.370079040527344,
+      "p99_ms": 12.393993377685547
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "influx",
+      "label": "InfluxDB write (samples)",
+      "n": 777669,
+      "mean_ms": 6.079106920810781,
+      "p50_ms": 6.0,
+      "p95_ms": 7.0,
+      "p99_ms": 8.0
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "total",
+      "label": "Total, sensor to durable commit",
+      "n": 777669,
+      "mean_ms": 1686.0631384845396,
+      "p50_ms": 1085.3486061096191,
+      "p95_ms": 7538.268303871154,
+      "p99_ms": 9467.081990242003
+    },
+    {
+      "tag": "sweep_W1_sessions",
+      "step": "reply",
+      "label": "Acknowledgment back to the bridge (not in total)",
+      "n": 777669,
+      "mean_ms": 12.347313561594172,
+      "p50_ms": 12.315511703491211,
+      "p95_ms": 13.512611389160156,
+      "p99_ms": 14.81485366821289
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "ble",
+      "label": "BLE link + host stack (added delay, t_h - t_s)",
+      "n": 777669,
+      "mean_ms": 963.4325978879714,
+      "p50_ms": 106.57966136932373,
+      "p95_ms": 6812.167525291443,
+      "p99_ms": 8744.560360908508
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "driver",
+      "label": "Driver to standardized ROS 2 message (t_r - t_h)",
+      "n": 777669,
+      "mean_ms": 3.1474546694651346,
+      "p50_ms": 2.977609634399414,
+      "p95_ms": 5.24592399597168,
+      "p99_ms": 6.676034927368152
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "batching",
+      "label": "Bridge batch window (sample receipt -> batch closed)",
+      "n": 777669,
+      "mean_ms": 2665.3453602961554,
+      "p50_ms": 2712.197780609131,
+      "p95_ms": 5017.308139801025,
+      "p99_ms": 5040.73055267334
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "queue",
+      "label": "Upload queue (batch closed -> request sent)",
+      "n": 777669,
+      "mean_ms": 2.322001883539833,
+      "p50_ms": 0.244140625,
+      "p95_ms": 5.537748336791992,
+      "p99_ms": 79.60844039916992
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "transport",
+      "label": "HTTPS to the API: TLS, nginx, auth (sent -> received)",
+      "n": 777669,
+      "mean_ms": 5.404878798142929,
+      "p50_ms": 4.569530487060547,
+      "p95_ms": 16.115188598632812,
+      "p99_ms": 17.99631118774414
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "validation",
+      "label": "Schema and plausibility validation",
+      "n": 777669,
+      "mean_ms": 0.8542238168719901,
+      "p50_ms": 0.7100105285644531,
+      "p95_ms": 1.3880729675292969,
+      "p99_ms": 6.428003311157227
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "postgres",
+      "label": "PostgreSQL commit (batch metadata)",
+      "n": 777669,
+      "mean_ms": 13.680132453501514,
+      "p50_ms": 13.037910461425781,
+      "p95_ms": 14.984930038452148,
+      "p99_ms": 55.258047103881836
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "influx",
+      "label": "InfluxDB write (samples)",
+      "n": 777669,
+      "mean_ms": 11.344507753298636,
+      "p50_ms": 11.0,
+      "p95_ms": 13.0,
+      "p99_ms": 15.0
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "total",
+      "label": "Total, sensor to durable commit",
+      "n": 777669,
+      "mean_ms": 3665.5311575589467,
+      "p50_ms": 3407.9729318618774,
+      "p95_ms": 9369.57936286926,
+      "p99_ms": 12270.589666366575
+    },
+    {
+      "tag": "sweep_W5_sessions",
+      "step": "reply",
+      "label": "Acknowledgment back to the bridge (not in total)",
+      "n": 777669,
+      "mean_ms": 12.700436288541436,
+      "p50_ms": 12.630939483642578,
+      "p95_ms": 14.127969741821289,
+      "p99_ms": 15.867471694946289
+    }
+  ],
+  "live": {
+    "p50_ms": 3.010272979736328,
+    "p99_ms": 10.688912868499823,
+    "n_samples": 2627270,
+    "max_abs_diff_M_live_minus_host_pp": {
+      "0.1s": 2.730627306273064,
+      "0.25s": 0.7126696832579142,
+      "1s": 0.05390660474139253,
+      "10s": 0.0
+    }
+  },
+  "w_sweep": [
+    {
+      "W": 0.1,
+      "n_runs": 22,
+      "durable_p50_s": 0.14343857765197754,
+      "durable_p99_s": 0.16985137939453124,
+      "req_per_s": 1.5385360482041415,
+      "api_cpu_pct": 2.1710119369161944,
+      "M_durable_0.1s": 99.98076260156317,
+      "met_0.1s_pct_of_samples": 0.3644223956464768,
+      "aoi_over_0.1s_pct": 100.0,
+      "M_durable_0.25s": 51.057396236007214,
+      "met_0.25s_pct_of_samples": 99.98354055517194,
+      "aoi_over_0.25s_pct": 95.28742019553792,
+      "M_durable_1s": 18.533295065524456,
+      "met_1s_pct_of_samples": 100.0,
+      "aoi_over_1s_pct": 21.38793369357842,
+      "M_durable_10s": 0.6601983617878665,
+      "met_10s_pct_of_samples": 100.0,
+      "aoi_over_10s_pct": 0.1519018949587992,
+      "aoi_mean_s": 1.4099301858751665
+    },
+    {
+      "W": 0.5,
+      "n_runs": 22,
+      "durable_p50_s": 0.5341086387634277,
+      "durable_p99_s": 0.5703284740447998,
+      "req_per_s": 1.224889803774438,
+      "api_cpu_pct": 1.7964465747690013,
+      "M_durable_0.1s": 96.49269607244584,
+      "met_0.1s_pct_of_samples": 9.964779359856186,
+      "aoi_over_0.1s_pct": 99.88264678093816,
+      "M_durable_0.25s": 88.06848858005073,
+      "met_0.25s_pct_of_samples": 19.767536059686062,
+      "aoi_over_0.25s_pct": 97.90576763081485,
+      "M_durable_1s": 21.86419400111427,
+      "met_1s_pct_of_samples": 100.0,
+      "aoi_over_1s_pct": 45.57014222931352,
+      "M_durable_10s": 0.7808802821995319,
+      "met_10s_pct_of_samples": 100.0,
+      "aoi_over_10s_pct": 0.3718412098680112,
+      "aoi_mean_s": 1.7120175778849502
+    },
+    {
+      "W": 1.0,
+      "n_runs": 22,
+      "durable_p50_s": 0.6904051303863525,
+      "durable_p99_s": 1.071298589706421,
+      "req_per_s": 0.7082793526409171,
+      "api_cpu_pct": 1.1528653838461105,
+      "M_durable_0.1s": 99.33010503096357,
+      "met_0.1s_pct_of_samples": 3.6070616161888926,
+      "aoi_over_0.1s_pct": 99.96645420999666,
+      "M_durable_0.25s": 96.64129787948868,
+      "met_0.25s_pct_of_samples": 8.567526801248345,
+      "aoi_over_0.25s_pct": 99.44692612033073,
+      "M_durable_1s": 58.089167284251374,
+      "met_1s_pct_of_samples": 54.1699617703676,
+      "aoi_over_1s_pct": 68.45379333538439,
+      "M_durable_10s": 1.0305466208584846,
+      "met_10s_pct_of_samples": 100.0,
+      "aoi_over_10s_pct": 0.7095060697701987,
+      "aoi_mean_s": 1.9770630324135312
+    },
+    {
+      "W": 5.0,
+      "n_runs": 22,
+      "durable_p50_s": 2.747746467590332,
+      "durable_p99_s": 5.078043413162232,
+      "req_per_s": 0.18322961236695515,
+      "api_cpu_pct": 0.4801603834990324,
+      "M_durable_0.1s": 99.57422527638346,
+      "met_0.1s_pct_of_samples": 1.1651486686495156,
+      "aoi_over_0.1s_pct": 100.0,
+      "M_durable_0.25s": 98.31879721653868,
+      "met_0.25s_pct_of_samples": 2.7154226283933136,
+      "aoi_over_0.25s_pct": 99.74489147724097,
+      "M_durable_1s": 89.42660442296224,
+      "met_1s_pct_of_samples": 13.757909856249896,
+      "aoi_over_1s_pct": 92.80378207192244,
+      "M_durable_10s": 4.464342935470611,
+      "met_10s_pct_of_samples": 100.0,
+      "aoi_over_10s_pct": 4.312172156642884,
+      "aoi_mean_s": 3.9427879675376927
+    }
+  ]
+}

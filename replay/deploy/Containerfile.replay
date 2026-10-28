@@ -1,0 +1,40 @@
+# Replay container for the SLURM node (no ROS 2 on the host): ROS 2 Jazzy,
+# healthcare_msgs (the pinned commit), the MedWear bridge, the replay/analysis
+# scripts, and a Docker CLI that talks to the host's rootless Podman socket
+# (container stats, API logs and the store check go through it).
+#
+# Built by deploy.sh from a staging directory laid out like the workspace:
+#   healthcare_msgs/  medwear/ros2_to_medwear/
+#   wireless_experiments/scripts/analyze_session.py  wireless_experiments/replay/
+FROM docker.io/library/ros:jazzy-ros-base
+
+ARG http_proxy
+ARG https_proxy
+ARG DOCKER_CLI_VERSION=27.3.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-numpy python3-pandas python3-matplotlib python3-yaml python3-requests \
+        curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+       | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
+
+COPY healthcare_msgs /ws/src/healthcare_msgs
+RUN . /opt/ros/jazzy/setup.sh && cd /ws && colcon build --packages-select healthcare_msgs \
+    && rm -rf build log
+
+COPY medwear/ros2_to_medwear /app/medwear/ros2_to_medwear
+COPY wireless_experiments/scripts/analyze_session.py /app/wireless_experiments/scripts/analyze_session.py
+COPY wireless_experiments/replay /app/wireless_experiments/replay
+
+# Runtime mounts (job script): captures -> /app/wireless_experiments/captures (ro),
+# logs/ and results/ under /app/wireless_experiments/replay, the
+# Podman socket -> /run/docker.sock.
+ENV DOCKER_HOST=unix:///run/docker.sock \
+    API_BASE_URL=https://127.0.0.1:8443/v1 \
+    E2E_MANAGED_STACK=1 \
+    MPLBACKEND=Agg
+WORKDIR /app/wireless_experiments/replay
+SHELL ["/bin/bash", "-c"]
+ENTRYPOINT ["/bin/bash", "-c", "source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash && exec \"$@\"", "--"]
+CMD ["./run_e2e.sh"]

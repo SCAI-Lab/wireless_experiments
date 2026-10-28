@@ -1,0 +1,4 @@
+wifi_band,n_clean,clean_channels
+OFDM occupied (52 subcarriers) (±8.125 MHz),9,9 10 21 22 23 33 34 35 36
+nominal 20 MHz (±10 MHz),6,10 21 22 34 35 36
+spectral mask -20 dBr (±11 MHz),5,10 22 34 35 36

@@ -1,0 +1,24 @@
+{
+  "session_id": "gym_SPZ_20261016_103145",
+  "input": "captures/gym_SPZ_20261016_103145",
+  "script_version": "1.4.3",
+  "analyzed_at": "2026-10-27T13:29:43",
+  "n_manifest_rows": 24,
+  "n_runs_analyzed": 24,
+  "n_excluded": 0,
+  "noload_settle_s": 40.0,
+  "ecg_drift_ppm": -27.1,
+  "ecg_drift_ppm_per_run": [
+    -27.1,
+    -21.8,
+    -47.7
+  ],
+  "sha256": {
+    "manifest.csv": "92d189fe99274a33c1ed0d4c07d39c0999ac1df2ea5cf22eff89dc3e21e0751c",
+    "session.log": "481c23ba8f43f92c35141bb3572e7003423da096fea2a82d43e20a7342079da2"
+  },
+  "driver_commands": {
+    "ros2 run polar_ros2 polar_connector --mac-address-or-name A0:9E:1A:DF:7F:6C --no-publish-battery": 12,
+    "ros2 run corsano_ros corsano_ros --mac-address-or-name D9:D9:DF:CB:74:79 --publish-bioz --publish-accel --publish-hr --publish-stress --plan HOSPITAL_RAW --test-republish-latest": 12
+  }
+}
