@@ -1,0 +1,16 @@
+# Bridge config for the batch-window (W) sweep: Polar H10 ECG only, as in
+# Table III. W is set per experiment with replay_chamber.py --batch-window;
+# everything else matches ../../medwear/ros2_to_medwear/config.yaml.
+api:
+  base_url: "https://localhost/v1"
+
+topics:
+  - topic: "/polar_ecg"
+    msg_type: "healthcare_msgs/msg/ECG"
+    signal_type: "ECG"
+    field: "ecg"
+    quality_field: "signal_quality"
+    unit: "mV"
+    sampling_rate_hz: 130
+    batch_window_s: 1
+    gap_threshold_s: 1.0

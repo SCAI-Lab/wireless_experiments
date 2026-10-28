@@ -1,0 +1,343 @@
+{
+  "full_replay": {
+    "n_recordings": 72,
+    "hours": 6.12637736563028,
+    "batches": {
+      "batches": 49033,
+      "attempts": 49033,
+      "http_200": 49010,
+      "samples_committed": 7203541,
+      "status_ingested": 49010,
+      "overlap_warnings": 49010,
+      "http_400": 23,
+      "samples_rejected": 3358
+    },
+    "errors": {
+      "SCHEMA_VALIDATION_FAILURE": 23
+    },
+    "plausibility_rejections": [
+      {
+        "session": "gym_SPZ_20261013_133642",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1791892155870900393,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 4 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-24T21:14:56Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 144.37680554389954
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140242543999650,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 48 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:23:23Z\", \"issues\": [{\"field\": \"\", \"",
+        "s_after_last_connection": 130.771653175354
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140243664299611,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=5.14 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:23:25Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 131.8919529914856
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140244880187898,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=5.49 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:23:26Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 133.10784149169922
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140247040530695,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 3 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:23:28Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 135.26818418502808
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140256040682464,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=6.24 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:23:37Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 144.26833605766296
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140257165200453,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 6 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:23:38Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 145.39285397529602
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140258293910135,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=-3.03 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:23:39Z\", \"issues\": [{\"field\": \"\", \"messa",
+        "s_after_last_connection": 146.52156352996826
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140272870166548,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 56 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:23:54Z\", \"issues\": [{\"field\": \"\", \"",
+        "s_after_last_connection": 161.09782004356384
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140273995290599,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=5.83 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:23:55Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 162.22294402122498
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140275165817168,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=3.75 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:23:56Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 163.39347052574158
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140276246049420,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 2 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:23:57Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 164.47370314598083
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140287452483736,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 4 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:24:08Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 175.68013739585876
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k0_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140293076743890,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=3.75 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:24:14Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 181.30439734458923
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140585034854807,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 23 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:29:01Z\", \"issues\": [{\"field\": \"\", \"",
+        "s_after_last_connection": 160.62241744995117
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140586116499547,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 30 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:29:02Z\", \"issues\": [{\"field\": \"\", \"",
+        "s_after_last_connection": 161.70406198501587
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140587240071545,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=6.57 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:29:03Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 162.82763409614563
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140588410079392,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG baseline wander detected: signal mean=3.49 mV exceeds 30% of max amplitude. Apply a high-pass filter (\\u22650.05 Hz) before upload.\", \"timestamp\": \"2026-10-25T01:29:04Z\", \"issues\": [{\"field\": \"\", \"messag",
+        "s_after_last_connection": 163.99764204025269
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140678187177827,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 6 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:30:34Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 253.7747402191162
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k2_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140686107561569,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 2 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:30:42Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 261.6951241493225
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k8_rep1",
+        "n_samples": 146,
+        "batch_start_ns": 1792140948634436725,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 3 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T01:35:00Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 208.29395961761475
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_forced_Polar_H10_forced_k8_rep2",
+        "n_samples": 146,
+        "batch_start_ns": 1792144127206157351,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 2 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T02:26:48Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 206.53206968307495
+      },
+      {
+        "session": "gym_SPZ_20261016_103145",
+        "run": "gym_free_Polar_H10_free_channel_rep2",
+        "n_samples": 146,
+        "batch_start_ns": 1792144363054236872,
+        "detail": "{\"error\": \"SCHEMA_VALIDATION_FAILURE\", \"detail\": \"ECG body validation failed: : Value error, ECG amplitude outside physiological range [-10, 10] mV: 2 samples exceed limits (tolerance: 1). Check electrode placement or amplifier gain.\", \"timestamp\": \"2026-10-25T02:30:39Z\", \"issues\": [{\"field\": \"\", \"m",
+        "s_after_last_connection": 128.56208753585815
+      }
+    ],
+    "expected_msgs": {
+      "/polar_ecg": 1247808,
+      "/polar_hr": 3172,
+      "/polar_acc": 1961388,
+      "/corsano/acceleration": 2542,
+      "/corsano/hr": 154,
+      "/corsano/bioz": 2559
+    },
+    "committed_msgs": {
+      "/polar_acc": 1961388,
+      "/polar_ecg": 1244450,
+      "/corsano/bioz": 2559,
+      "/corsano/acceleration": 2542,
+      "/corsano/hr": 154,
+      "/polar_hr": 3172
+    },
+    "missing_msgs": {
+      "/polar_ecg": 3358,
+      "/polar_hr": 0,
+      "/polar_acc": 0,
+      "/corsano/acceleration": 0,
+      "/corsano/hr": 0,
+      "/corsano/bioz": 0
+    }
+  },
+  "stages": [
+    {
+      "tag": "gym_W1_sessions",
+      "step": "ble",
+      "label": "BLE link + host stack (added delay, t_h - t_s)",
+      "n": 1175081,
+      "mean_ms": 50.14192348549423,
+      "p50_ms": 44.804930686950684,
+      "p95_ms": 94.2995548248291,
+      "p99_ms": 145.61915397644043
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "driver",
+      "label": "Driver to standardized ROS 2 message (t_r - t_h)",
+      "n": 1175081,
+      "mean_ms": 3.4911954701311765,
+      "p50_ms": 3.3206939697265625,
+      "p95_ms": 5.590915679931641,
+      "p99_ms": 7.176208496093739
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "batching",
+      "label": "Bridge batch window (sample receipt -> batch closed)",
+      "n": 1175081,
+      "mean_ms": 741.8569610767848,
+      "p50_ms": 627.373218536377,
+      "p95_ms": 1041.2185192108154,
+      "p99_ms": 1046.244192123413
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "queue",
+      "label": "Upload queue (batch closed -> request sent)",
+      "n": 1175081,
+      "mean_ms": 0.4516392473877335,
+      "p50_ms": 0.22077560424804688,
+      "p95_ms": 0.37384033203125,
+      "p99_ms": 3.9510726928710938
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "transport",
+      "label": "HTTPS to the API: TLS, nginx, auth (sent -> received)",
+      "n": 1175081,
+      "mean_ms": 3.6231986231469686,
+      "p50_ms": 3.3926963806152344,
+      "p95_ms": 7.105827331542969,
+      "p99_ms": 10.336875915527344
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "validation",
+      "label": "Schema and plausibility validation",
+      "n": 1175081,
+      "mean_ms": 0.5822774274030702,
+      "p50_ms": 0.514984130859375,
+      "p95_ms": 1.0631084442138672,
+      "p99_ms": 2.1300315856933594
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "postgres",
+      "label": "PostgreSQL commit (batch metadata)",
+      "n": 1175081,
+      "mean_ms": 11.195090964142876,
+      "p50_ms": 9.710903167724608,
+      "p95_ms": 21.730890274047848,
+      "p99_ms": 53.58914756774902
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "influx",
+      "label": "InfluxDB write (samples)",
+      "n": 1175081,
+      "mean_ms": 5.859800303128043,
+      "p50_ms": 6.0,
+      "p95_ms": 7.0,
+      "p99_ms": 16.0
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "total",
+      "label": "Total, sensor to durable commit",
+      "n": 1175081,
+      "mean_ms": 817.2020865976191,
+      "p50_ms": 863.632321357727,
+      "p95_ms": 1135.7687711715698,
+      "p99_ms": 1180.5055379867554
+    },
+    {
+      "tag": "gym_W1_sessions",
+      "step": "reply",
+      "label": "Acknowledgment back to the bridge (not in total)",
+      "n": 1175081,
+      "mean_ms": 12.423677727075127,
+      "p50_ms": 12.002706527709961,
+      "p95_ms": 16.695261001586914,
+      "p99_ms": 19.99831199645996
+    }
+  ],
+  "live": {
+    "p50_ms": 3.3211708068847656,
+    "p99_ms": 7.186083793640108,
+    "n_samples": 1178439,
+    "max_abs_diff_M_live_minus_host_pp": {
+      "0.1s": 2.4441219158200305,
+      "0.25s": 0.0,
+      "1s": 0.0,
+      "10s": 0.0
+    }
+  },
+  "w_sweep": []
+}

@@ -11,6 +11,7 @@ rehab gym (`gym_session.py`). Both scripts share one `config.yaml` and the
 |---|---|
 | `scripts/` | All code: the session scripts, `analyze_session.py`, `background_monitor.py`, `privacy_scrub.py` and the other tools, `config.yaml`, the `session_lib/` package and `paper_figures/`. |
 | `captures/` | Raw session data, one folder per session (btsnoop, rosbags, driver logs, AFH maps, background monitor). Not in git. |
+| `replay/` | Replay of the chamber and gym recordings through MEDWEAR (paper Table IV): replay and analysis code, SLURM deployment, results of the paper's runs. See `replay/README.md`. |
 | `analysis/` | `analyze_session.py` output, one folder per session plus pooled analyses. Git tracks the paper's sessions: `20261007_105222_chamber_1`, `20261008_010249_chamber_2`, the three `gym_SPZ_*` sessions and their pooled analyses. |
 
 Run everything from the repository root, e.g. `python3 scripts/gym_session.py run`.
