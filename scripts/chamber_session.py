@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Chamber session automation — Rows 1-3
-=======================================
+Chamber session automation — Rows 1-5 and 8
+=============================================
 
 Automates the repetitive parts of the chamber procedure:
   - starts/stops a btmon capture around each run
@@ -19,13 +19,12 @@ What this script does NOT automate (still manual, by design):
   - verifying the TP-Link/Pi are on the right 2.4 GHz channel (do this in
     your pre-day dry run, per the checklist)
 
-Devices run one at a time, fully (all of rows 1-3 for device A, then all of
-rows 1-3 for device B), rather than interleaved row-by-row. This matches how
+Devices run one at a time, fully (every row for device A, then every row
+for device B), rather than interleaved row-by-row. This matches how
 a single patient's sensor is used (one device active at a time) and,
 together with the explicit BlueZ disconnect after every run (see
 disconnect_ble_device in session_lib/drivers.py), keeps a finished device's
-background reconnect off the shared radio. Row 2's AP/Pi setup and Row 3's
-generic-BLE-peripheral pause therefore happen once per device.
+background reconnect off the shared radio.
 
 Each run gets its own timestamped session directory under
 config.yaml's session.output_dir (e.g. <output_dir>/20260918_121724/),
@@ -703,9 +702,7 @@ def main():
         "--row",
         default="all",
         choices=["1", "2", "3", "4", "5", "8", "all"],
-        help="Which row to run, or 'all' for rows 1, 2, 3, 4, 5, 8 in that order. "
-        "(Rows 6, BLE-BLE contention, and 7, QBSS scan interference, were "
-        "removed 2026-10-06; their past data still parses.)",
+        help="Which row to run, or 'all' for rows 1, 2, 3, 4, 5, 8 in that order.",
     )
     run_p.add_argument("--config", default="config.yaml")
     run_p.add_argument(
