@@ -22,19 +22,24 @@ sessions go to `<repo>/captures/` and analyses to `<repo>/analysis/`.
 
 ## Data and reproducing the paper
 
-The recorded sessions (two chamber sessions, three gym sessions) and the
-replay logs are archived on Zenodo (DOI: TODO), one zip per session. Unzip
-the sessions into `captures/` and rerun the analysis:
+The two chamber sessions are archived on Zenodo
+([10.5281/zenodo.23750299](https://doi.org/10.5281/zenodo.23750299)), one zip
+per session. Unzip them into `captures/` and rerun the analysis:
 
 ```bash
-mkdir -p captures && for z in /path/to/zenodo/2026*.zip /path/to/zenodo/gym_SPZ_*.zip; do unzip -q "$z" -d captures; done
+mkdir -p captures && for z in /path/to/zenodo/2026*.zip; do unzip -q "$z" -d captures; done
 python3 scripts/analyze_session.py captures/* --pool      # -> analysis/
 ```
 
-This reproduces the committed `analysis/` folders. The replay analysis is
+This reproduces the committed chamber folders in `analysis/`. The replay analysis is
 described in `replay/README.md`. The published copies were cleaned of
 bystanders' and researchers' identifiers with `scripts/export_dataset.py`
 (see [Privacy](#privacy)).
+
+The gym sessions were recorded in a clinical rehabilitation gym (Swiss
+Paraplegic Centre); their raw data are available on request, subject to the
+centre's approval. Their analysis is in `analysis/` (the three `gym_SPZ_*`
+sessions and the pooled analyses).
 
 License: MIT (see `LICENSE`).
 
