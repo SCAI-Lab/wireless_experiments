@@ -51,7 +51,7 @@ next to `wireless_experiments`:
 
 | Component | Version |
 |---|---|
-| MEDWEAR (bridge and platform) | `49be39f` (branch `feature/atomic-ingest-sessions`) |
+| MEDWEAR (bridge and platform) | `49be39f`
 | healthcare_msgs | `c9de02f` |
 | Session analysis | `scripts/analyze_session.py` 1.4.3 |
 | Replay runs | tags `full_W1_sessions`, `sweep_W{0.1,0.5,1,5}_sessions` (SLURM job 13832), `gym_W1_sessions` (13833), see `RUNS.md` |
